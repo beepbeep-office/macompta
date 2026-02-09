@@ -9,30 +9,16 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            overflow-x: hidden;
-        }
-        .sidebar-transition {
-            transition: transform 0.3s ease-in-out;
-        }
-        .content-transition {
-            transition: margin-left 0.3s ease-in-out;
-        }
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #1f2937;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #4b5563;
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #6b7280;
+        body { margin: 0; padding: 0; overflow-x: hidden; }
+        .sidebar-transition { transition: transform 0.3s ease-in-out; }
+        .content-transition { transition: margin-left 0.3s ease-in-out; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white !important; color: black !important; }
         }
     </style>
 </head>
@@ -47,25 +33,19 @@
                 try {
                     const value = localStorage.getItem(key);
                     return value ? { key, value } : null;
-                } catch (e) {
-                    return null;
-                }
+                } catch (e) { return null; }
             },
             async set(key, value) {
                 try {
                     localStorage.setItem(key, value);
                     return { key, value };
-                } catch (e) {
-                    return null;
-                }
+                } catch (e) { return null; }
             },
             async delete(key) {
                 try {
                     localStorage.removeItem(key);
                     return { key, deleted: true };
-                } catch (e) {
-                    return null;
-                }
+                } catch (e) { return null; }
             }
         };
 
@@ -79,6 +59,7 @@
         const Book = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>;
         const Edit = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>;
         const Check = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>;
+        const Calendar = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>;
 
         function AppComptable() {
           const [ecritures, setEcritures] = useState([]);
@@ -87,6 +68,7 @@
             '106': { nom: 'Réserves', type: 'Passif' },
             '401': { nom: 'Fournisseurs', type: 'Passif' },
             '411': { nom: 'Clients', type: 'Actif' },
+            '445': { nom: 'État TVA déductible', type: 'Actif' },
             '512': { nom: 'Banque', type: 'Actif' },
             '530': { nom: 'Caisse', type: 'Actif' },
             '601': { nom: 'Achats', type: 'Charge' },
@@ -97,29 +79,41 @@
             '701': { nom: 'Ventes', type: 'Produit' },
             '706': { nom: 'Prestation de services', type: 'Produit' },
             '404': { nom: 'Dettes sociales', type: 'Passif' },
-            '444': { nom: 'État TVA due', type: 'Passif' }
+            '444': { nom: 'État TVA collectée', type: 'Passif' }
           });
           const [comptes, setComptes] = useState(comptesDefaut);
-          const [formData, setFormData] = useState({
-            date: new Date().toISOString().split('T')[0],
-            description: '',
-            compteDebit: '',
-            montantDebit: '',
-            compteCredit: '',
-            montantCredit: ''
+          const [journaux] = useState({
+            'AC': 'Achats',
+            'VE': 'Ventes',
+            'BQ': 'Banque',
+            'CA': 'Caisse',
+            'OD': 'Opérations Diverses'
           });
+          
+          const [formData, setFormData] = useState({
+            numero: '',
+            date: new Date().toISOString().split('T')[0],
+            journal: 'OD',
+            description: '',
+            lignes: [
+              { compte: '', libelle: '', debit: '', credit: '' }
+            ]
+          });
+          
           const [erreur, setErreur] = useState('');
-          const [filterCompte, setFilterCompte] = useState('');
           const [chargement, setChargement] = useState(true);
           const [sidebarOpen, setSidebarOpen] = useState(true);
           const [activeView, setActiveView] = useState('ecritures');
           const [editingCompte, setEditingCompte] = useState(null);
           const [newCompte, setNewCompte] = useState({ code: '', nom: '', type: 'Actif' });
+          const [periodeDebut, setPeriodeDebut] = useState('');
+          const [periodeFin, setPeriodeFin] = useState('');
+          const [journalFiltre, setJournalFiltre] = useState('');
 
           useEffect(() => {
             const chargerDonnees = async () => {
               try {
-                const resultEcritures = await window.storage.get('ecritures_comptables');
+                const resultEcritures = await window.storage.get('ecritures_comptables_v2');
                 if (resultEcritures && resultEcritures.value) {
                   setEcritures(JSON.parse(resultEcritures.value));
                 }
@@ -138,7 +132,7 @@
 
           const sauvegarderEcritures = async (nouvellesEcritures) => {
             try {
-              await window.storage.set('ecritures_comptables', JSON.stringify(nouvellesEcritures));
+              await window.storage.set('ecritures_comptables_v2', JSON.stringify(nouvellesEcritures));
             } catch (e) {
               console.error('Erreur:', e);
             }
@@ -152,55 +146,112 @@
             }
           };
 
+          const ajouterLigne = () => {
+            setFormData({
+              ...formData,
+              lignes: [...formData.lignes, { compte: '', libelle: '', debit: '', credit: '' }]
+            });
+          };
+
+          const supprimerLigne = (index) => {
+            if (formData.lignes.length > 1) {
+              const nouvelles = formData.lignes.filter((_, i) => i !== index);
+              setFormData({ ...formData, lignes: nouvelles });
+            }
+          };
+
+          const modifierLigne = (index, champ, valeur) => {
+            const nouvelles = [...formData.lignes];
+            nouvelles[index][champ] = valeur;
+            
+            if (champ === 'compte' && valeur && comptes[valeur]) {
+              nouvelles[index].libelle = comptes[valeur].nom;
+            }
+            
+            setFormData({ ...formData, lignes: nouvelles });
+          };
+
+          const calculerTotaux = () => {
+            let totalDebit = 0;
+            let totalCredit = 0;
+            formData.lignes.forEach(ligne => {
+              totalDebit += parseFloat(ligne.debit) || 0;
+              totalCredit += parseFloat(ligne.credit) || 0;
+            });
+            return { totalDebit, totalCredit };
+          };
+
           const validerEcriture = () => {
             setErreur('');
-            if (!formData.date || !formData.description) {
-              setErreur('Date et description obligatoires');
+            if (!formData.date || !formData.description || !formData.numero) {
+              setErreur('Date, numéro et description obligatoires');
               return false;
             }
-            if (!formData.compteDebit || !formData.compteCredit) {
-              setErreur('Sélectionnez un compte débit et crédit');
+            
+            const lignesValides = formData.lignes.filter(l => l.compte && (l.debit || l.credit));
+            if (lignesValides.length < 2) {
+              setErreur('Au moins 2 lignes avec compte et montant requis');
               return false;
             }
-            if (formData.compteDebit === formData.compteCredit) {
-              setErreur('Les comptes débit et crédit doivent être différents');
+
+            const { totalDebit, totalCredit } = calculerTotaux();
+            if (Math.abs(totalDebit - totalCredit) > 0.01) {
+              setErreur(`Déséquilibre : Débit ${totalDebit.toFixed(2)}€ ≠ Crédit ${totalCredit.toFixed(2)}€`);
               return false;
             }
-            const debit = parseFloat(formData.montantDebit) || 0;
-            const credit = parseFloat(formData.montantCredit) || 0;
-            if (debit <= 0 || credit <= 0) {
-              setErreur('Les montants doivent être positifs');
+
+            if (totalDebit === 0) {
+              setErreur('Le total doit être supérieur à 0');
               return false;
             }
-            if (Math.abs(debit - credit) > 0.01) {
-              setErreur('Le total débit doit égaler le total crédit');
-              return false;
-            }
+
             return true;
           };
 
           const ajouterEcriture = (e) => {
             e.preventDefault();
             if (!validerEcriture()) return;
+
             const nouvelleEcriture = {
               id: Date.now(),
+              numero: formData.numero,
               date: formData.date,
+              journal: formData.journal,
               description: formData.description,
-              operations: [
-                { compte: formData.compteDebit, libelle: comptes[formData.compteDebit].nom, debit: parseFloat(formData.montantDebit), credit: 0 },
-                { compte: formData.compteCredit, libelle: comptes[formData.compteCredit].nom, debit: 0, credit: parseFloat(formData.montantCredit) }
-              ]
+              lignes: formData.lignes
+                .filter(l => l.compte && (l.debit || l.credit))
+                .map(l => ({
+                  compte: l.compte,
+                  libelle: l.libelle || comptes[l.compte].nom,
+                  debit: parseFloat(l.debit) || 0,
+                  credit: parseFloat(l.credit) || 0
+                }))
             };
-            const nouvellesEcritures = [...ecritures, nouvelleEcriture].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            const nouvellesEcritures = [...ecritures, nouvelleEcriture].sort((a, b) => {
+              const dateCompare = new Date(a.date) - new Date(b.date);
+              if (dateCompare !== 0) return dateCompare;
+              return a.numero.localeCompare(b.numero);
+            });
+
             setEcritures(nouvellesEcritures);
             sauvegarderEcritures(nouvellesEcritures);
-            setFormData({ date: new Date().toISOString().split('T')[0], description: '', compteDebit: '', montantDebit: '', compteCredit: '', montantCredit: '' });
+
+            setFormData({
+              numero: '',
+              date: new Date().toISOString().split('T')[0],
+              journal: formData.journal,
+              description: '',
+              lignes: [{ compte: '', libelle: '', debit: '', credit: '' }]
+            });
           };
 
           const supprimerEcriture = (id) => {
-            const nouvellesEcritures = ecritures.filter(e => e.id !== id);
-            setEcritures(nouvellesEcritures);
-            sauvegarderEcritures(nouvellesEcritures);
+            if (confirm('Supprimer cette écriture ?')) {
+              const nouvellesEcritures = ecritures.filter(e => e.id !== id);
+              setEcritures(nouvellesEcritures);
+              sauvegarderEcritures(nouvellesEcritures);
+            }
           };
 
           const ajouterCompte = () => {
@@ -240,65 +291,211 @@
             }
           };
 
-          const calculerSituation = () => {
-            const soldes = {};
-            Object.keys(comptes).forEach(compte => {
-              soldes[compte] = { debit: 0, credit: 0, solde: 0, type: comptes[compte].type };
+          const filtrerParPeriode = (ecriture) => {
+            if (!periodeDebut && !periodeFin) return true;
+            const dateEcr = new Date(ecriture.date);
+            if (periodeDebut && dateEcr < new Date(periodeDebut)) return false;
+            if (periodeFin && dateEcr > new Date(periodeFin)) return false;
+            return true;
+          };
+
+          const getEcrituresFiltrees = () => {
+            return ecritures.filter(e => {
+              if (!filtrerParPeriode(e)) return false;
+              if (journalFiltre && e.journal !== journalFiltre) return false;
+              return true;
             });
-            ecritures.forEach(ecriture => {
-              ecriture.operations.forEach(op => {
-                if (soldes[op.compte]) {
-                  soldes[op.compte].debit += op.debit;
-                  soldes[op.compte].credit += op.credit;
+          };
+
+          const calculerGrandLivre = () => {
+            const grandLivre = {};
+            Object.keys(comptes).forEach(code => {
+              grandLivre[code] = {
+                nom: comptes[code].nom,
+                type: comptes[code].type,
+                mouvements: [],
+                totalDebit: 0,
+                totalCredit: 0,
+                solde: 0
+              };
+            });
+
+            getEcrituresFiltrees().forEach(ecriture => {
+              ecriture.lignes.forEach(ligne => {
+                if (grandLivre[ligne.compte]) {
+                  grandLivre[ligne.compte].mouvements.push({
+                    date: ecriture.date,
+                    numero: ecriture.numero,
+                    journal: ecriture.journal,
+                    libelle: ecriture.description,
+                    debit: ligne.debit,
+                    credit: ligne.credit
+                  });
+                  grandLivre[ligne.compte].totalDebit += ligne.debit;
+                  grandLivre[ligne.compte].totalCredit += ligne.credit;
                 }
               });
             });
-            Object.keys(soldes).forEach(compte => {
-              const { debit, credit, type } = soldes[compte];
-              if (type === 'Actif' || type === 'Charge') {
-                soldes[compte].solde = debit - credit;
+
+            Object.keys(grandLivre).forEach(code => {
+              const gl = grandLivre[code];
+              if (gl.type === 'Actif' || gl.type === 'Charge') {
+                gl.solde = gl.totalDebit - gl.totalCredit;
               } else {
-                soldes[compte].solde = credit - debit;
+                gl.solde = gl.totalCredit - gl.totalDebit;
               }
             });
-            return soldes;
+
+            return grandLivre;
+          };
+
+          const calculerBalance = () => {
+            const grandLivre = calculerGrandLivre();
+            return Object.entries(grandLivre)
+              .filter(([_, gl]) => gl.totalDebit > 0 || gl.totalCredit > 0)
+              .map(([code, gl]) => ({
+                code,
+                nom: gl.nom,
+                type: gl.type,
+                mouvementDebit: gl.totalDebit,
+                mouvementCredit: gl.totalCredit,
+                soldeDebiteur: gl.solde > 0 ? gl.solde : 0,
+                soldeCrediteur: gl.solde < 0 ? -gl.solde : 0
+              }))
+              .sort((a, b) => a.code.localeCompare(b.code));
+          };
+
+          const calculerSituation = () => {
+            const grandLivre = calculerGrandLivre();
+            return grandLivre;
           };
 
           const genererExport = () => {
-            const situation = calculerSituation();
             const date = new Date().toLocaleDateString('fr-FR');
-            let contenu = `SITUATION COMPTABLE - ${date}\n${'='.repeat(50)}\n\n`;
-            contenu += `Nombre d'écritures: ${ecritures.length}\n\n`;
-            contenu += '=== BILAN ===\n\nACTIF\n';
+            const balance = calculerBalance();
+            const grandLivre = calculerGrandLivre();
+            const ecrituresFiltrees = getEcrituresFiltrees();
+            
+            let contenu = `DOCUMENTS COMPTABLES - ${date}\n`;
+            contenu += `${'='.repeat(80)}\n`;
+            if (periodeDebut || periodeFin) {
+              contenu += `Période: ${periodeDebut || 'début'} au ${periodeFin || 'fin'}\n`;
+              contenu += `${'='.repeat(80)}\n`;
+            }
+            contenu += `\n`;
+
+            // Journaux
+            contenu += `\n${'='.repeat(80)}\n`;
+            contenu += `JOURNAUX\n`;
+            contenu += `${'='.repeat(80)}\n\n`;
+            
+            Object.entries(journaux).forEach(([code, nom]) => {
+              const ecrituresJournal = ecrituresFiltrees.filter(e => e.journal === code);
+              if (ecrituresJournal.length > 0) {
+                contenu += `\nJOURNAL ${nom} (${code})\n`;
+                contenu += `${'-'.repeat(80)}\n`;
+                ecrituresJournal.forEach(ecr => {
+                  contenu += `\n${ecr.date} | N°${ecr.numero} | ${ecr.description}\n`;
+                  ecr.lignes.forEach(l => {
+                    const debit = l.debit > 0 ? l.debit.toFixed(2).padStart(12) : ''.padStart(12);
+                    const credit = l.credit > 0 ? l.credit.toFixed(2).padStart(12) : ''.padStart(12);
+                    contenu += `  ${l.compte.padEnd(6)} ${l.libelle.padEnd(35)} ${debit} ${credit}\n`;
+                  });
+                  const total = ecr.lignes.reduce((s, l) => s + l.debit, 0);
+                  contenu += `  ${'TOTAL'.padEnd(42)} ${total.toFixed(2).padStart(12)} ${total.toFixed(2).padStart(12)}\n`;
+                });
+              }
+            });
+
+            // Balance
+            contenu += `\n\n${'='.repeat(80)}\n`;
+            contenu += `BALANCE GÉNÉRALE\n`;
+            contenu += `${'='.repeat(80)}\n`;
+            contenu += `${'Compte'.padEnd(10)} ${'Intitulé'.padEnd(30)} ${'Mvt Débit'.padStart(12)} ${'Mvt Crédit'.padStart(12)} ${'Solde D'.padStart(12)} ${'Solde C'.padStart(12)}\n`;
+            contenu += `${'-'.repeat(80)}\n`;
+            
+            let totalMvtD = 0, totalMvtC = 0, totalSoldeD = 0, totalSoldeC = 0;
+            balance.forEach(b => {
+              contenu += `${b.code.padEnd(10)} ${b.nom.padEnd(30)} ${b.mouvementDebit.toFixed(2).padStart(12)} ${b.mouvementCredit.toFixed(2).padStart(12)} ${b.soldeDebiteur.toFixed(2).padStart(12)} ${b.soldeCrediteur.toFixed(2).padStart(12)}\n`;
+              totalMvtD += b.mouvementDebit;
+              totalMvtC += b.mouvementCredit;
+              totalSoldeD += b.soldeDebiteur;
+              totalSoldeC += b.soldeCrediteur;
+            });
+            contenu += `${'-'.repeat(80)}\n`;
+            contenu += `${'TOTAUX'.padEnd(40)} ${totalMvtD.toFixed(2).padStart(12)} ${totalMvtC.toFixed(2).padStart(12)} ${totalSoldeD.toFixed(2).padStart(12)} ${totalSoldeC.toFixed(2).padStart(12)}\n`;
+
+            // Grand Livre
+            contenu += `\n\n${'='.repeat(80)}\n`;
+            contenu += `GRAND LIVRE\n`;
+            contenu += `${'='.repeat(80)}\n\n`;
+            
+            Object.entries(grandLivre)
+              .filter(([_, gl]) => gl.mouvements.length > 0)
+              .sort((a, b) => a[0].localeCompare(b[0]))
+              .forEach(([code, gl]) => {
+                contenu += `\nCompte ${code} - ${gl.nom}\n`;
+                contenu += `${'-'.repeat(80)}\n`;
+                gl.mouvements.forEach(mvt => {
+                  const debit = mvt.debit > 0 ? mvt.debit.toFixed(2).padStart(12) : ''.padStart(12);
+                  const credit = mvt.credit > 0 ? mvt.credit.toFixed(2).padStart(12) : ''.padStart(12);
+                  contenu += `${mvt.date} ${mvt.journal} N°${mvt.numero.padEnd(6)} ${mvt.libelle.padEnd(30)} ${debit} ${credit}\n`;
+                });
+                contenu += `${'TOTAUX'.padEnd(51)} ${gl.totalDebit.toFixed(2).padStart(12)} ${gl.totalCredit.toFixed(2).padStart(12)}\n`;
+                contenu += `${'SOLDE'.padEnd(51)} ${gl.solde >= 0 ? gl.solde.toFixed(2).padStart(12) : ''.padStart(12)} ${gl.solde < 0 ? (-gl.solde).toFixed(2).padStart(12) : ''}\n`;
+              });
+
+            // Bilan et Compte de résultat
+            contenu += `\n\n${'='.repeat(80)}\n`;
+            contenu += `BILAN\n`;
+            contenu += `${'='.repeat(80)}\n`;
+            
+            const actifs = balance.filter(b => b.type === 'Actif' && b.soldeDebiteur > 0);
+            const passifs = balance.filter(b => b.type === 'Passif' && b.soldeCrediteur > 0);
+            
+            contenu += `\nACTIF\n`;
             let totalActif = 0;
-            Object.entries(situation).filter(([_, s]) => s.type === 'Actif' && s.solde > 0).forEach(([code, compte]) => {
-              contenu += `  ${code} ${comptes[code].nom.padEnd(30)} ${compte.solde.toFixed(2)}€\n`;
-              totalActif += compte.solde;
+            actifs.forEach(b => {
+              contenu += `  ${b.code} ${b.nom.padEnd(40)} ${b.soldeDebiteur.toFixed(2).padStart(12)}\n`;
+              totalActif += b.soldeDebiteur;
             });
-            contenu += `  ${'-'.repeat(50)}\n  ${'TOTAL ACTIF'.padEnd(30)} ${totalActif.toFixed(2)}€\n\nPASSIF\n`;
+            contenu += `  ${'TOTAL ACTIF'.padEnd(40)} ${totalActif.toFixed(2).padStart(12)}\n`;
+            
+            contenu += `\nPASSIF\n`;
             let totalPassif = 0;
-            Object.entries(situation).filter(([_, s]) => s.type === 'Passif' && s.solde > 0).forEach(([code, compte]) => {
-              contenu += `  ${code} ${comptes[code].nom.padEnd(30)} ${compte.solde.toFixed(2)}€\n`;
-              totalPassif += compte.solde;
+            passifs.forEach(b => {
+              contenu += `  ${b.code} ${b.nom.padEnd(40)} ${b.soldeCrediteur.toFixed(2).padStart(12)}\n`;
+              totalPassif += b.soldeCrediteur;
             });
-            contenu += `  ${'-'.repeat(50)}\n  ${'TOTAL PASSIF'.padEnd(30)} ${totalPassif.toFixed(2)}€\n\n`;
-            contenu += '=== COMPTE DE RÉSULTAT ===\n\nPRODUITS\n';
+            contenu += `  ${'TOTAL PASSIF'.padEnd(40)} ${totalPassif.toFixed(2).padStart(12)}\n`;
+
+            contenu += `\n\n${'='.repeat(80)}\n`;
+            contenu += `COMPTE DE RÉSULTAT\n`;
+            contenu += `${'='.repeat(80)}\n`;
+            
+            const produits = balance.filter(b => b.type === 'Produit' && b.soldeCrediteur > 0);
+            const charges = balance.filter(b => b.type === 'Charge' && b.soldeDebiteur > 0);
+            
+            contenu += `\nPRODUITS\n`;
             let totalProduits = 0;
-            Object.entries(situation).filter(([_, s]) => s.type === 'Produit' && s.solde > 0).forEach(([code, compte]) => {
-              contenu += `  ${code} ${comptes[code].nom.padEnd(30)} ${compte.solde.toFixed(2)}€\n`;
-              totalProduits += compte.solde;
+            produits.forEach(b => {
+              contenu += `  ${b.code} ${b.nom.padEnd(40)} ${b.soldeCrediteur.toFixed(2).padStart(12)}\n`;
+              totalProduits += b.soldeCrediteur;
             });
-            contenu += `  ${'-'.repeat(50)}\n  ${'TOTAL PRODUITS'.padEnd(30)} ${totalProduits.toFixed(2)}€\n\nCHARGES\n`;
+            contenu += `  ${'TOTAL PRODUITS'.padEnd(40)} ${totalProduits.toFixed(2).padStart(12)}\n`;
+            
+            contenu += `\nCHARGES\n`;
             let totalCharges = 0;
-            Object.entries(situation).filter(([_, s]) => s.type === 'Charge' && s.solde > 0).forEach(([code, compte]) => {
-              contenu += `  ${code} ${comptes[code].nom.padEnd(30)} ${compte.solde.toFixed(2)}€\n`;
-              totalCharges += compte.solde;
+            charges.forEach(b => {
+              contenu += `  ${b.code} ${b.nom.padEnd(40)} ${b.soldeDebiteur.toFixed(2).padStart(12)}\n`;
+              totalCharges += b.soldeDebiteur;
             });
-            contenu += `  ${'-'.repeat(50)}\n  ${'TOTAL CHARGES'.padEnd(30)} ${totalCharges.toFixed(2)}€\n\n`;
-            contenu += `  ${'='.repeat(50)}\n  ${'RÉSULTAT NET'.padEnd(30)} ${(totalProduits - totalCharges).toFixed(2)}€\n`;
+            contenu += `  ${'TOTAL CHARGES'.padEnd(40)} ${totalCharges.toFixed(2).padStart(12)}\n`;
+            contenu += `\n  ${'RÉSULTAT NET'.padEnd(40)} ${(totalProduits - totalCharges).toFixed(2).padStart(12)}\n`;
+
             const element = document.createElement('a');
             element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(contenu));
-            element.setAttribute('download', `situation_${date.replace(/\//g, '-')}.txt`);
+            element.setAttribute('download', `comptabilite_${date.replace(/\//g, '-')}.txt`);
             element.style.display = 'none';
             document.body.appendChild(element);
             element.click();
@@ -316,6 +513,9 @@
             );
           }
 
+          const { totalDebit, totalCredit } = calculerTotaux();
+          const balance = calculerBalance();
+          const grandLivre = calculerGrandLivre();
           const situation = calculerSituation();
 
           return (
@@ -330,13 +530,22 @@
                   </div>
                   <nav className="flex-1 p-4 space-y-2">
                     <button onClick={() => setActiveView('ecritures')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${activeView === 'ecritures' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
-                      <Book /><span>Écritures</span>
+                      <Book /><span>Saisie</span>
+                    </button>
+                    <button onClick={() => setActiveView('journaux')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${activeView === 'journaux' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
+                      <Calendar /><span>Journaux</span>
+                    </button>
+                    <button onClick={() => setActiveView('grandlivre')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${activeView === 'grandlivre' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
+                      <Book /><span>Grand Livre</span>
+                    </button>
+                    <button onClick={() => setActiveView('balance')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${activeView === 'balance' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
+                      <ChartBar /><span>Balance</span>
                     </button>
                     <button onClick={() => setActiveView('situation')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${activeView === 'situation' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
-                      <ChartBar /><span>Situation</span>
+                      <ChartBar /><span>Bilan & Résultat</span>
                     </button>
                     <button onClick={() => setActiveView('plan')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${activeView === 'plan' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
-                      <Settings /><span>Plan comptable</span>
+                      <Settings /><span>Plan Comptable</span>
                     </button>
                   </nav>
                   <div className="p-4 border-t border-gray-700">
@@ -349,19 +558,30 @@
               </div>
 
               <div className={`content-transition ${sidebarOpen ? 'lg:ml-64' : 'ml-0'}`}>
-                <div className="bg-gray-800 border-b border-gray-700 sticky top-0 z-40">
+                <div className="bg-gray-800 border-b border-gray-700 sticky top-0 z-40 no-print">
                   <div className="px-4 py-3 flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <button onClick={() => setSidebarOpen(!sidebarOpen)} className="text-gray-400 hover:text-white transition"><Menu /></button>
                       <h2 className="text-lg font-semibold text-gray-200">
-                        {activeView === 'ecritures' && 'Journal des écritures'}
-                        {activeView === 'situation' && 'Situation financière'}
+                        {activeView === 'ecritures' && 'Saisie des écritures'}
+                        {activeView === 'journaux' && 'Journaux'}
+                        {activeView === 'grandlivre' && 'Grand Livre'}
+                        {activeView === 'balance' && 'Balance Générale'}
+                        {activeView === 'situation' && 'Bilan & Compte de résultat'}
                         {activeView === 'plan' && 'Plan comptable'}
                       </h2>
                     </div>
-                    <button onClick={genererExport} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition">
-                      <Download /><span className="hidden sm:inline">Exporter</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {activeView !== 'ecritures' && activeView !== 'plan' && (
+                        <>
+                          <input type="date" value={periodeDebut} onChange={(e) => setPeriodeDebut(e.target.value)} placeholder="Du" className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                          <input type="date" value={periodeFin} onChange={(e) => setPeriodeFin(e.target.value)} placeholder="Au" className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </>
+                      )}
+                      <button onClick={genererExport} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition">
+                        <Download /><span className="hidden sm:inline">Exporter</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -372,88 +592,255 @@
                         <h3 className="text-lg font-semibold mb-4 text-gray-200">Nouvelle écriture</h3>
                         {erreur && <div className="mb-4 p-4 bg-red-900/50 border border-red-700 text-red-300 rounded-lg">⚠️ {erreur}</div>}
                         <form onSubmit={ajouterEcriture} className="space-y-4">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <div>
-                              <label className="block text-sm font-medium text-gray-300 mb-2">Date</label>
+                              <label className="block text-sm font-medium text-gray-300 mb-2">N° Écriture *</label>
+                              <input type="text" value={formData.numero} onChange={(e) => setFormData({...formData, numero: e.target.value})} placeholder="Ex: 001" className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-300 mb-2">Date *</label>
                               <input type="date" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                             </div>
                             <div>
-                              <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
-                              <input type="text" placeholder="Ex: Facture client #001" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                              <label className="block text-sm font-medium text-gray-300 mb-2">Journal *</label>
+                              <select value={formData.journal} onChange={(e) => setFormData({...formData, journal: e.target.value})} className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                {Object.entries(journaux).map(([code, nom]) => <option key={code} value={code}>{code} - {nom}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-300 mb-2">Description *</label>
+                              <input type="text" placeholder="Libellé de l'écriture" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                             </div>
                           </div>
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <div className="border border-gray-700 rounded-lg p-4">
-                              <h4 className="font-semibold text-blue-400 mb-3">DÉBIT</h4>
-                              <div className="space-y-3">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-300 mb-2">Compte</label>
-                                  <select value={formData.compteDebit} onChange={(e) => setFormData({...formData, compteDebit: e.target.value})} className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                    <option value="">Sélectionnez...</option>
-                                    {Object.entries(comptes).sort((a, b) => a[0].localeCompare(b[0])).map(([code, info]) => <option key={code} value={code}>{code} - {info.nom}</option>)}
-                                  </select>
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-300 mb-2">Montant €</label>
-                                  <input type="number" step="0.01" placeholder="0.00" value={formData.montantDebit} onChange={(e) => setFormData({...formData, montantDebit: e.target.value})} className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                                </div>
-                              </div>
+
+                          <div className="border border-gray-700 rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="font-semibold text-gray-200">Lignes d'écriture</h4>
+                              <button type="button" onClick={ajouterLigne} className="flex items-center gap-1 px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-sm transition">
+                                <Plus /> Ajouter ligne
+                              </button>
                             </div>
-                            <div className="border border-gray-700 rounded-lg p-4">
-                              <h4 className="font-semibold text-green-400 mb-3">CRÉDIT</h4>
-                              <div className="space-y-3">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-300 mb-2">Compte</label>
-                                  <select value={formData.compteCredit} onChange={(e) => setFormData({...formData, compteCredit: e.target.value})} className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                    <option value="">Sélectionnez...</option>
-                                    {Object.entries(comptes).sort((a, b) => a[0].localeCompare(b[0])).map(([code, info]) => <option key={code} value={code}>{code} - {info.nom}</option>)}
-                                  </select>
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-300 mb-2">Montant €</label>
-                                  <input type="number" step="0.01" placeholder="0.00" value={formData.montantCredit} onChange={(e) => setFormData({...formData, montantCredit: e.target.value})} className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                                </div>
+                            
+                            <div className="space-y-2">
+                              <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-400 pb-2 border-b border-gray-700">
+                                <div className="col-span-2">Compte</div>
+                                <div className="col-span-5">Libellé</div>
+                                <div className="col-span-2 text-right">Débit</div>
+                                <div className="col-span-2 text-right">Crédit</div>
+                                <div className="col-span-1"></div>
                               </div>
+                              
+                              {formData.lignes.map((ligne, index) => (
+                                <div key={index} className="grid grid-cols-12 gap-2 items-center">
+                                  <div className="col-span-2">
+                                    <select value={ligne.compte} onChange={(e) => modifierLigne(index, 'compte', e.target.value)} className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                      <option value="">--</option>
+                                      {Object.entries(comptes).sort((a, b) => a[0].localeCompare(b[0])).map(([code, info]) => <option key={code} value={code}>{code}</option>)}
+                                    </select>
+                                  </div>
+                                  <div className="col-span-5">
+                                    <input type="text" value={ligne.libelle} onChange={(e) => modifierLigne(index, 'libelle', e.target.value)} placeholder="Libellé" className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                  </div>
+                                  <div className="col-span-2">
+                                    <input type="number" step="0.01" value={ligne.debit} onChange={(e) => modifierLigne(index, 'debit', e.target.value)} placeholder="0.00" className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 text-right placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                  </div>
+                                  <div className="col-span-2">
+                                    <input type="number" step="0.01" value={ligne.credit} onChange={(e) => modifierLigne(index, 'credit', e.target.value)} placeholder="0.00" className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 text-right placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                  </div>
+                                  <div className="col-span-1">
+                                    {formData.lignes.length > 1 && (
+                                      <button type="button" onClick={() => supprimerLigne(index)} className="text-red-400 hover:text-red-300 p-1">
+                                        <Trash />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                              
+                              <div className="grid grid-cols-12 gap-2 pt-2 border-t border-gray-700 font-semibold">
+                                <div className="col-span-7 text-right text-gray-300">TOTAUX:</div>
+                                <div className={`col-span-2 text-right ${Math.abs(totalDebit - totalCredit) > 0.01 ? 'text-red-400' : 'text-green-400'}`}>
+                                  {totalDebit.toFixed(2)}€
+                                </div>
+                                <div className={`col-span-2 text-right ${Math.abs(totalDebit - totalCredit) > 0.01 ? 'text-red-400' : 'text-green-400'}`}>
+                                  {totalCredit.toFixed(2)}€
+                                </div>
+                                <div className="col-span-1"></div>
+                              </div>
+                              
+                              {Math.abs(totalDebit - totalCredit) > 0.01 && (totalDebit > 0 || totalCredit > 0) && (
+                                <div className="text-sm text-yellow-400 pt-2">
+                                  ⚠️ Différence: {Math.abs(totalDebit - totalCredit).toFixed(2)}€
+                                </div>
+                              )}
                             </div>
                           </div>
-                          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition">
-                            <Plus />Ajouter l'écriture
+
+                          <button type="submit" disabled={Math.abs(totalDebit - totalCredit) > 0.01} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition">
+                            <Plus />Enregistrer l'écriture
                           </button>
                         </form>
                       </div>
+
                       <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-                        <div className="flex items-center justify-between mb-4">
-                          <h3 className="text-lg font-semibold text-gray-200">Journal ({ecritures.length})</h3>
-                        </div>
-                        <div className="mb-4">
-                          <input type="text" placeholder="Filtrer par compte ou description..." value={filterCompte} onChange={(e) => setFilterCompte(e.target.value)} className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                        </div>
+                        <h3 className="text-lg font-semibold text-gray-200 mb-4">Écritures récentes ({ecritures.length})</h3>
                         <div className="space-y-3 max-h-96 overflow-y-auto">
                           {ecritures.length === 0 ? (
-                            <p className="text-gray-500 text-center py-8">Aucune écriture pour le moment</p>
+                            <p className="text-gray-500 text-center py-8">Aucune écriture</p>
                           ) : (
-                            ecritures.filter(e => !filterCompte || e.description.toLowerCase().includes(filterCompte.toLowerCase()) || e.operations.some(op => op.compte.includes(filterCompte) || op.libelle.toLowerCase().includes(filterCompte.toLowerCase()))).map((ecriture) => (
+                            ecritures.slice().reverse().slice(0, 20).map((ecriture) => (
                               <div key={ecriture.id} className="bg-gray-700/50 border border-gray-600 rounded-lg p-4 hover:bg-gray-700 transition">
-                                <div className="flex justify-between items-start">
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-3 mb-1">
-                                      <span className="text-xs text-gray-400 font-mono">{ecriture.date}</span>
-                                      <span className="font-semibold text-gray-200">{ecriture.description}</span>
-                                    </div>
-                                    <div className="mt-2 space-y-1 text-sm">
-                                      {ecriture.operations.map((op, idx) => (
-                                        <div key={idx} className={`flex justify-between ${idx === 0 ? 'text-blue-400' : 'text-green-400'}`}>
-                                          <span>{op.compte} {op.libelle}</span>
-                                          <span className="font-mono">{op.debit > 0 ? `${op.debit.toFixed(2)}€` : `${op.credit.toFixed(2)}€`}</span>
-                                        </div>
-                                      ))}
-                                    </div>
+                                <div className="flex justify-between items-start mb-2">
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-xs bg-blue-900/50 text-blue-300 px-2 py-1 rounded font-mono">{ecriture.numero}</span>
+                                    <span className="text-xs text-gray-400 font-mono">{ecriture.date}</span>
+                                    <span className="text-xs bg-gray-600 text-gray-300 px-2 py-1 rounded">{ecriture.journal}</span>
+                                    <span className="font-semibold text-gray-200">{ecriture.description}</span>
                                   </div>
-                                  <button onClick={() => supprimerEcriture(ecriture.id)} className="ml-4 text-red-400 hover:text-red-300 transition"><Trash /></button>
+                                  <button onClick={() => supprimerEcriture(ecriture.id)} className="text-red-400 hover:text-red-300 transition">
+                                    <Trash />
+                                  </button>
+                                </div>
+                                <div className="space-y-1 text-sm">
+                                  {ecriture.lignes.map((ligne, idx) => (
+                                    <div key={idx} className="flex justify-between text-gray-300">
+                                      <span>{ligne.compte} {ligne.libelle}</span>
+                                      <span className="font-mono">
+                                        {ligne.debit > 0 && <span className="text-blue-400">{ligne.debit.toFixed(2)}€ D</span>}
+                                        {ligne.credit > 0 && <span className="text-green-400">{ligne.credit.toFixed(2)}€ C</span>}
+                                      </span>
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
                             ))
                           )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeView === 'journaux' && (
+                    <div className="space-y-6">
+                      <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                        <select value={journalFiltre} onChange={(e) => setJournalFiltre(e.target.value)} className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                          <option value="">Tous les journaux</option>
+                          {Object.entries(journaux).map(([code, nom]) => <option key={code} value={code}>{code} - {nom}</option>)}
+                        </select>
+                      </div>
+                      
+                      {Object.entries(journaux).map(([codeJournal, nomJournal]) => {
+                        if (journalFiltre && journalFiltre !== codeJournal) return null;
+                        const ecrituresJournal = getEcrituresFiltrees().filter(e => e.journal === codeJournal);
+                        if (ecrituresJournal.length === 0) return null;
+                        
+                        return (
+                          <div key={codeJournal} className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+                            <h3 className="text-lg font-semibold text-blue-400 mb-4">Journal {nomJournal} ({codeJournal}) - {ecrituresJournal.length} écritures</h3>
+                            <div className="space-y-4">
+                              {ecrituresJournal.map(ecr => (
+                                <div key={ecr.id} className="border-b border-gray-700 pb-3">
+                                  <div className="font-semibold text-gray-200 mb-2">{ecr.date} | N°{ecr.numero} | {ecr.description}</div>
+                                  <div className="space-y-1 text-sm">
+                                    {ecr.lignes.map((l, idx) => (
+                                      <div key={idx} className="grid grid-cols-12 gap-2">
+                                        <div className="col-span-1 text-gray-400">{l.compte}</div>
+                                        <div className="col-span-7 text-gray-300">{l.libelle}</div>
+                                        <div className="col-span-2 text-right text-blue-400 font-mono">{l.debit > 0 ? l.debit.toFixed(2) : ''}</div>
+                                        <div className="col-span-2 text-right text-green-400 font-mono">{l.credit > 0 ? l.credit.toFixed(2) : ''}</div>
+                                      </div>
+                                    ))}
+                                    <div className="grid grid-cols-12 gap-2 font-semibold pt-1 border-t border-gray-700/50">
+                                      <div className="col-span-8 text-right text-gray-400">Total:</div>
+                                      <div className="col-span-2 text-right text-blue-400 font-mono">{ecr.lignes.reduce((s, l) => s + l.debit, 0).toFixed(2)}</div>
+                                      <div className="col-span-2 text-right text-green-400 font-mono">{ecr.lignes.reduce((s, l) => s + l.credit, 0).toFixed(2)}</div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {activeView === 'grandlivre' && (
+                    <div className="space-y-6">
+                      {Object.entries(grandLivre)
+                        .filter(([_, gl]) => gl.mouvements.length > 0)
+                        .sort((a, b) => a[0].localeCompare(b[0]))
+                        .map(([code, gl]) => (
+                          <div key={code} className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+                            <h3 className="text-lg font-semibold text-blue-400 mb-4">Compte {code} - {gl.nom}</h3>
+                            <div className="space-y-1 text-sm">
+                              <div className="grid grid-cols-12 gap-2 font-medium text-gray-400 pb-2 border-b border-gray-700">
+                                <div className="col-span-2">Date</div>
+                                <div className="col-span-1">Journal</div>
+                                <div className="col-span-1">N°</div>
+                                <div className="col-span-5">Libellé</div>
+                                <div className="col-span-2 text-right">Débit</div>
+                                <div className="col-span-1 text-right">Crédit</div>
+                              </div>
+                              {gl.mouvements.map((mvt, idx) => (
+                                <div key={idx} className="grid grid-cols-12 gap-2 py-1 hover:bg-gray-700/30">
+                                  <div className="col-span-2 text-gray-400 font-mono">{mvt.date}</div>
+                                  <div className="col-span-1 text-gray-400">{mvt.journal}</div>
+                                  <div className="col-span-1 text-gray-400 font-mono">{mvt.numero}</div>
+                                  <div className="col-span-5 text-gray-300">{mvt.libelle}</div>
+                                  <div className="col-span-2 text-right text-blue-400 font-mono">{mvt.debit > 0 ? mvt.debit.toFixed(2) : ''}</div>
+                                  <div className="col-span-1 text-right text-green-400 font-mono">{mvt.credit > 0 ? mvt.credit.toFixed(2) : ''}</div>
+                                </div>
+                              ))}
+                              <div className="grid grid-cols-12 gap-2 pt-2 border-t-2 border-gray-600 font-bold">
+                                <div className="col-span-9 text-right text-gray-300">TOTAUX:</div>
+                                <div className="col-span-2 text-right text-blue-400 font-mono">{gl.totalDebit.toFixed(2)}</div>
+                                <div className="col-span-1 text-right text-green-400 font-mono">{gl.totalCredit.toFixed(2)}</div>
+                              </div>
+                              <div className="grid grid-cols-12 gap-2 font-bold">
+                                <div className="col-span-9 text-right text-gray-300">SOLDE:</div>
+                                <div className="col-span-3 text-right font-mono">
+                                  <span className={gl.solde >= 0 ? 'text-blue-400' : 'text-green-400'}>
+                                    {Math.abs(gl.solde).toFixed(2)} {gl.solde >= 0 ? 'D' : 'C'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+
+                  {activeView === 'balance' && (
+                    <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+                      <h3 className="text-xl font-semibold text-blue-400 mb-4">Balance Générale</h3>
+                      <div className="overflow-x-auto">
+                        <div className="space-y-1 text-sm">
+                          <div className="grid grid-cols-12 gap-2 font-medium text-gray-400 pb-2 border-b border-gray-700">
+                            <div className="col-span-1">Compte</div>
+                            <div className="col-span-4">Intitulé</div>
+                            <div className="col-span-2 text-right">Mvt Débit</div>
+                            <div className="col-span-2 text-right">Mvt Crédit</div>
+                            <div className="col-span-2 text-right">Solde D</div>
+                            <div className="col-span-1 text-right">Solde C</div>
+                          </div>
+                          {balance.map(b => (
+                            <div key={b.code} className="grid grid-cols-12 gap-2 py-1 hover:bg-gray-700/30">
+                              <div className="col-span-1 text-gray-400 font-mono">{b.code}</div>
+                              <div className="col-span-4 text-gray-300">{b.nom}</div>
+                              <div className="col-span-2 text-right text-gray-300 font-mono">{b.mouvementDebit.toFixed(2)}</div>
+                              <div className="col-span-2 text-right text-gray-300 font-mono">{b.mouvementCredit.toFixed(2)}</div>
+                              <div className="col-span-2 text-right text-blue-400 font-mono">{b.soldeDebiteur > 0 ? b.soldeDebiteur.toFixed(2) : ''}</div>
+                              <div className="col-span-1 text-right text-green-400 font-mono">{b.soldeCrediteur > 0 ? b.soldeCrediteur.toFixed(2) : ''}</div>
+                            </div>
+                          ))}
+                          <div className="grid grid-cols-12 gap-2 pt-2 border-t-2 border-gray-600 font-bold">
+                            <div className="col-span-5 text-right text-gray-300">TOTAUX:</div>
+                            <div className="col-span-2 text-right text-blue-400 font-mono">{balance.reduce((s, b) => s + b.mouvementDebit, 0).toFixed(2)}</div>
+                            <div className="col-span-2 text-right text-green-400 font-mono">{balance.reduce((s, b) => s + b.mouvementCredit, 0).toFixed(2)}</div>
+                            <div className="col-span-2 text-right text-blue-400 font-mono">{balance.reduce((s, b) => s + b.soldeDebiteur, 0).toFixed(2)}</div>
+                            <div className="col-span-1 text-right text-green-400 font-mono">{balance.reduce((s, b) => s + b.soldeCrediteur, 0).toFixed(2)}</div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -467,30 +854,30 @@
                           <div>
                             <h4 className="font-semibold text-gray-300 mb-3">Actif</h4>
                             <div className="space-y-2">
-                              {Object.entries(situation).filter(([_, s]) => s.type === 'Actif' && s.solde > 0).map(([code, compte]) => (
-                                <div key={code} className="flex justify-between text-sm py-2 border-b border-gray-700/50">
-                                  <span className="text-gray-400">{code} {comptes[code].nom}</span>
-                                  <span className="font-mono text-gray-200">{compte.solde.toFixed(2)}€</span>
+                              {balance.filter(b => b.type === 'Actif' && b.soldeDebiteur > 0).map(b => (
+                                <div key={b.code} className="flex justify-between text-sm py-2 border-b border-gray-700/50">
+                                  <span className="text-gray-400">{b.code} {b.nom}</span>
+                                  <span className="font-mono text-gray-200">{b.soldeDebiteur.toFixed(2)}€</span>
                                 </div>
                               ))}
                               <div className="flex justify-between font-bold text-base pt-3 border-t-2 border-gray-600">
                                 <span className="text-gray-200">TOTAL ACTIF</span>
-                                <span className="text-blue-400 font-mono">{Object.entries(situation).filter(([_, s]) => s.type === 'Actif').reduce((sum, [_, s]) => sum + Math.max(0, s.solde), 0).toFixed(2)}€</span>
+                                <span className="text-blue-400 font-mono">{balance.filter(b => b.type === 'Actif').reduce((s, b) => s + b.soldeDebiteur, 0).toFixed(2)}€</span>
                               </div>
                             </div>
                           </div>
                           <div>
                             <h4 className="font-semibold text-gray-300 mb-3">Passif</h4>
                             <div className="space-y-2">
-                              {Object.entries(situation).filter(([_, s]) => s.type === 'Passif' && s.solde > 0).map(([code, compte]) => (
-                                <div key={code} className="flex justify-between text-sm py-2 border-b border-gray-700/50">
-                                  <span className="text-gray-400">{code} {comptes[code].nom}</span>
-                                  <span className="font-mono text-gray-200">{compte.solde.toFixed(2)}€</span>
+                              {balance.filter(b => b.type === 'Passif' && b.soldeCrediteur > 0).map(b => (
+                                <div key={b.code} className="flex justify-between text-sm py-2 border-b border-gray-700/50">
+                                  <span className="text-gray-400">{b.code} {b.nom}</span>
+                                  <span className="font-mono text-gray-200">{b.soldeCrediteur.toFixed(2)}€</span>
                                 </div>
                               ))}
                               <div className="flex justify-between font-bold text-base pt-3 border-t-2 border-gray-600">
                                 <span className="text-gray-200">TOTAL PASSIF</span>
-                                <span className="text-green-400 font-mono">{Object.entries(situation).filter(([_, s]) => s.type === 'Passif').reduce((sum, [_, s]) => sum + Math.max(0, s.solde), 0).toFixed(2)}€</span>
+                                <span className="text-green-400 font-mono">{balance.filter(b => b.type === 'Passif').reduce((s, b) => s + b.soldeCrediteur, 0).toFixed(2)}€</span>
                               </div>
                             </div>
                           </div>
@@ -502,38 +889,38 @@
                           <div>
                             <h4 className="font-semibold text-gray-300 mb-3">Produits</h4>
                             <div className="space-y-2">
-                              {Object.entries(situation).filter(([_, s]) => s.type === 'Produit' && s.solde > 0).map(([code, compte]) => (
-                                <div key={code} className="flex justify-between text-sm py-2 border-b border-gray-700/50">
-                                  <span className="text-gray-400">{code} {comptes[code].nom}</span>
-                                  <span className="font-mono text-gray-200">{compte.solde.toFixed(2)}€</span>
+                              {balance.filter(b => b.type === 'Produit' && b.soldeCrediteur > 0).map(b => (
+                                <div key={b.code} className="flex justify-between text-sm py-2 border-b border-gray-700/50">
+                                  <span className="text-gray-400">{b.code} {b.nom}</span>
+                                  <span className="font-mono text-gray-200">{b.soldeCrediteur.toFixed(2)}€</span>
                                 </div>
                               ))}
                               <div className="flex justify-between font-bold text-base pt-3 border-t-2 border-gray-600">
                                 <span className="text-gray-200">TOTAL PRODUITS</span>
-                                <span className="text-green-400 font-mono">{Object.entries(situation).filter(([_, s]) => s.type === 'Produit').reduce((sum, [_, s]) => sum + Math.max(0, s.solde), 0).toFixed(2)}€</span>
+                                <span className="text-green-400 font-mono">{balance.filter(b => b.type === 'Produit').reduce((s, b) => s + b.soldeCrediteur, 0).toFixed(2)}€</span>
                               </div>
                             </div>
                           </div>
                           <div>
                             <h4 className="font-semibold text-gray-300 mb-3">Charges</h4>
                             <div className="space-y-2">
-                              {Object.entries(situation).filter(([_, s]) => s.type === 'Charge' && s.solde > 0).map(([code, compte]) => (
-                                <div key={code} className="flex justify-between text-sm py-2 border-b border-gray-700/50">
-                                  <span className="text-gray-400">{code} {comptes[code].nom}</span>
-                                  <span className="font-mono text-gray-200">{compte.solde.toFixed(2)}€</span>
+                              {balance.filter(b => b.type === 'Charge' && b.soldeDebiteur > 0).map(b => (
+                                <div key={b.code} className="flex justify-between text-sm py-2 border-b border-gray-700/50">
+                                  <span className="text-gray-400">{b.code} {b.nom}</span>
+                                  <span className="font-mono text-gray-200">{b.soldeDebiteur.toFixed(2)}€</span>
                                 </div>
                               ))}
                               <div className="flex justify-between font-bold text-base pt-3 border-t-2 border-gray-600">
                                 <span className="text-gray-200">TOTAL CHARGES</span>
-                                <span className="text-red-400 font-mono">{Object.entries(situation).filter(([_, s]) => s.type === 'Charge').reduce((sum, [_, s]) => sum + Math.max(0, s.solde), 0).toFixed(2)}€</span>
+                                <span className="text-red-400 font-mono">{balance.filter(b => b.type === 'Charge').reduce((s, b) => s + b.soldeDebiteur, 0).toFixed(2)}€</span>
                               </div>
                             </div>
                           </div>
                           <div className="border-t-2 border-gray-600 pt-4">
                             <div className="flex justify-between text-xl font-bold">
                               <span className="text-gray-200">RÉSULTAT NET</span>
-                              <span className={`font-mono ${Object.entries(situation).reduce((sum, [_, s]) => sum + (s.type === 'Produit' ? Math.max(0, s.solde) : 0), 0) - Object.entries(situation).reduce((sum, [_, s]) => sum + (s.type === 'Charge' ? Math.max(0, s.solde) : 0), 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                {(Object.entries(situation).reduce((sum, [_, s]) => sum + (s.type === 'Produit' ? Math.max(0, s.solde) : 0), 0) - Object.entries(situation).reduce((sum, [_, s]) => sum + (s.type === 'Charge' ? Math.max(0, s.solde) : 0), 0)).toFixed(2)}€
+                              <span className={`font-mono ${(balance.filter(b => b.type === 'Produit').reduce((s, b) => s + b.soldeCrediteur, 0) - balance.filter(b => b.type === 'Charge').reduce((s, b) => s + b.soldeDebiteur, 0)) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {(balance.filter(b => b.type === 'Produit').reduce((s, b) => s + b.soldeCrediteur, 0) - balance.filter(b => b.type === 'Charge').reduce((s, b) => s + b.soldeDebiteur, 0)).toFixed(2)}€
                               </span>
                             </div>
                           </div>
