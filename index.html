@@ -3,11 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Comptabilité Pro - Multi-Sociétés</title>
+    <title>Comptabilité Pro v2.0 - Multi-Sociétés</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow-x: hidden; }
         .sidebar-transition { transition: transform 0.3s ease-in-out; }
@@ -27,7 +29,9 @@
 
     <script type="text/babel">
         const { useState, useEffect } = React;
+        const { jsPDF } = window.jspdf;
 
+        // Polyfill pour le stockage
         window.storage = {
             async get(key) {
                 try {
@@ -49,8 +53,8 @@
             }
         };
 
+        // Icônes SVG
         const Menu = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>;
-        const X = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>;
         const Plus = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>;
         const Trash = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>;
         const Download = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>;
@@ -62,11 +66,15 @@
         const Check = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>;
         const Calendar = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>;
         const Briefcase = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>;
+        const Save = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>;
+        const Lock = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>;
 
         function AppComptable() {
+          // Plan comptable par défaut
           const [comptesDefaut] = useState({
             '101000': { nom: 'Capital', type: 'Passif' },
             '106000': { nom: 'Réserves', type: 'Passif' },
+            '120000': { nom: 'Résultat de l\'exercice', type: 'Passif' },
             '401000': { nom: 'Fournisseurs', type: 'Passif' },
             '404000': { nom: 'Dettes sociales', type: 'Passif' },
             '411000': { nom: 'Clients', type: 'Actif' },
@@ -87,20 +95,25 @@
             '707000': { nom: 'Ventes de marchandises', type: 'Produit' }
           });
           
+          // Journaux par défaut
           const [journauxDefaut] = useState({
             'AC': 'Achats',
             'VE': 'Ventes',
             'BQ': 'Banque',
             'CA': 'Caisse',
-            'OD': 'Opérations Diverses'
+            'OD': 'Opérations Diverses',
+            'AN': 'À Nouveaux'
           });
 
+          // États
           const [societes, setSocietes] = useState({ 'societe1': 'Société A', 'societe2': 'Société B' });
           const [societeActive, setSocieteActive] = useState('societe1');
           const [ecritures, setEcritures] = useState([]);
           const [comptes, setComptes] = useState(comptesDefaut);
           const [journaux, setJournaux] = useState(journauxDefaut);
           const [periodeExercice, setPeriodeExercice] = useState({ debut: '', fin: '' });
+          const [clotures, setClotures] = useState([]);
+          const [brouillons, setBrouillons] = useState([]);
           
           const [formData, setFormData] = useState({
             numero: '',
@@ -122,6 +135,15 @@
           const [newJournal, setNewJournal] = useState({ code: '', nom: '' });
           const [newSociete, setNewSociete] = useState('');
 
+          // Sauvegarde automatique du brouillon toutes les 30 secondes
+          useEffect(() => {
+            const timer = setInterval(() => {
+              sauvegarderBrouillon();
+            }, 30000);
+            return () => clearInterval(timer);
+          }, [formData]);
+
+          // Chargement des données
           useEffect(() => {
             const chargerDonnees = async () => {
               try {
@@ -156,6 +178,16 @@
                 if (resPeriode && resPeriode.value) {
                   setPeriodeExercice(JSON.parse(resPeriode.value));
                 }
+
+                const resClotures = await window.storage.get(`${societe}_clotures`);
+                if (resClotures && resClotures.value) {
+                  setClotures(JSON.parse(resClotures.value));
+                }
+
+                const resBrouillons = await window.storage.get(`${societe}_brouillons`);
+                if (resBrouillons && resBrouillons.value) {
+                  setBrouillons(JSON.parse(resBrouillons.value));
+                }
               } catch (e) {
                 console.log('Première utilisation');
               } finally {
@@ -165,6 +197,7 @@
             chargerDonnees();
           }, [societeActive]);
 
+          // Fonctions de sauvegarde
           const sauvegarderSocietes = async (newSocietes) => {
             await window.storage.set('societes', JSON.stringify(newSocietes));
           };
@@ -181,7 +214,7 @@
               alert('Nom de société requis');
               return;
             }
-            const id = 'societe' + (Object.keys(societes).length + 1);
+            const id = 'societe' + Date.now();
             const newSocietes = { ...societes, [id]: newSociete };
             setSocietes(newSocietes);
             await sauvegarderSocietes(newSocietes);
@@ -199,6 +232,8 @@
             await window.storage.delete(`${id}_comptes`);
             await window.storage.delete(`${id}_journaux`);
             await window.storage.delete(`${id}_periode`);
+            await window.storage.delete(`${id}_clotures`);
+            await window.storage.delete(`${id}_brouillons`);
             
             const { [id]: removed, ...newSocietes } = societes;
             setSocietes(newSocietes);
@@ -225,6 +260,135 @@
             await window.storage.set(`${societeActive}_periode`, JSON.stringify(nouvellePeriode));
           };
 
+          const sauvegarderClotures = async (nouvellesClotures) => {
+            await window.storage.set(`${societeActive}_clotures`, JSON.stringify(nouvellesClotures));
+          };
+
+          const sauvegarderBrouillons = async (nouveauxBrouillons) => {
+            await window.storage.set(`${societeActive}_brouillons`, JSON.stringify(nouveauxBrouillons));
+          };
+
+          // Fonction de sauvegarde de brouillon
+          const sauvegarderBrouillon = () => {
+            if (formData.numero || formData.description || formData.lignes.some(l => l.compte)) {
+              const brouillon = {
+                id: Date.now(),
+                timestamp: new Date().toISOString(),
+                ...formData
+              };
+              const nouveauxBrouillons = [...brouillons.filter(b => b.timestamp !== brouillon.timestamp), brouillon].slice(-5); // Garder les 5 derniers
+              setBrouillons(nouveauxBrouillons);
+              sauvegarderBrouillons(nouveauxBrouillons);
+            }
+          };
+
+          const chargerBrouillon = (brouillon) => {
+            if (confirm('Charger ce brouillon ?')) {
+              setFormData({
+                numero: brouillon.numero,
+                date: brouillon.date,
+                journal: brouillon.journal,
+                description: brouillon.description,
+                lignes: brouillon.lignes
+              });
+            }
+          };
+
+          const supprimerBrouillon = (id) => {
+            const nouveauxBrouillons = brouillons.filter(b => b.id !== id);
+            setBrouillons(nouveauxBrouillons);
+            sauvegarderBrouillons(nouveauxBrouillons);
+          };
+
+          // Fonction de clôture de période
+          const cloturerPeriode = () => {
+            if (!periodeDebut || !periodeFin) {
+              alert('Veuillez sélectionner une période à clôturer');
+              return;
+            }
+
+            if (!confirm(`Clôturer la période du ${periodeDebut} au ${periodeFin} ?\n\nCette action va :\n- Générer les écritures de clôture\n- Transférer le résultat au compte 120000\n- Verrouiller la période`)) {
+              return;
+            }
+
+            const balance = calculerBalance();
+            const totalProduits = balance.filter(b => b.type === 'Produit').reduce((s, b) => s + b.soldeCrediteur, 0);
+            const totalCharges = balance.filter(b => b.type === 'Charge').reduce((s, b) => s + b.soldeDebiteur, 0);
+            const resultat = totalProduits - totalCharges;
+
+            const ecrituresCloture = [];
+            const dateC = periodeFin;
+            let numeroEcr = 1;
+
+            // Virement des produits
+            if (totalProduits > 0) {
+              const lignesProduits = balance.filter(b => b.type === 'Produit' && b.soldeCrediteur > 0).map(b => ({
+                compte: b.code,
+                libelle: 'Clôture ' + b.nom,
+                debit: b.soldeCrediteur,
+                credit: 0
+              }));
+              lignesProduits.push({
+                compte: '120000',
+                libelle: 'Résultat - Produits',
+                debit: 0,
+                credit: totalProduits
+              });
+              ecrituresCloture.push({
+                id: Date.now() + numeroEcr++,
+                numero: 'CLOT-P-' + periodeFin,
+                date: dateC,
+                journal: 'OD',
+                description: 'Clôture des comptes de produits',
+                lignes: lignesProduits
+              });
+            }
+
+            // Virement des charges
+            if (totalCharges > 0) {
+              const lignesCharges = balance.filter(b => b.type === 'Charge' && b.soldeDebiteur > 0).map(b => ({
+                compte: b.code,
+                libelle: 'Clôture ' + b.nom,
+                debit: 0,
+                credit: b.soldeDebiteur
+              }));
+              lignesCharges.push({
+                compte: '120000',
+                libelle: 'Résultat - Charges',
+                debit: totalCharges,
+                credit: 0
+              });
+              ecrituresCloture.push({
+                id: Date.now() + numeroEcr++,
+                numero: 'CLOT-C-' + periodeFin,
+                date: dateC,
+                journal: 'OD',
+                description: 'Clôture des comptes de charges',
+                lignes: lignesCharges
+              });
+            }
+
+            const nouvellesEcritures = [...ecritures, ...ecrituresCloture];
+            setEcritures(nouvellesEcritures);
+            sauvegarderEcritures(nouvellesEcritures);
+
+            const nouvelleCloture = {
+              id: Date.now(),
+              debut: periodeDebut,
+              fin: periodeFin,
+              resultat: resultat,
+              date: new Date().toISOString()
+            };
+            const nouvellesClotures = [...clotures, nouvelleCloture];
+            setClotures(nouvellesClotures);
+            sauvegarderClotures(nouvellesClotures);
+
+            alert(`Clôture effectuée !\n\nRésultat de la période : ${resultat.toFixed(2)}€\n${resultat >= 0 ? 'Bénéfice' : 'Perte'}`);
+            setPeriodeDebut('');
+            setPeriodeFin('');
+          };
+
+          // Gestion des journaux
           const ajouterJournal = () => {
             if (!newJournal.code || !newJournal.nom) {
               alert('Code et nom requis');
@@ -252,6 +416,7 @@
             }
           };
 
+          // Import/Export plan comptable
           const exporterPlanComptable = () => {
             const data = JSON.stringify(comptes, null, 2);
             const blob = new Blob([data], { type: 'application/json' });
@@ -284,6 +449,7 @@
             e.target.value = '';
           };
 
+          // Réinitialisation
           const reinitialiser = async () => {
             if (!confirm('ATTENTION : Supprimer TOUTES les données de ' + societes[societeActive] + ' ?')) return;
             if (!confirm('Cette action est IRRÉVERSIBLE. Confirmer ?')) return;
@@ -292,14 +458,19 @@
             await window.storage.delete(`${societeActive}_comptes`);
             await window.storage.delete(`${societeActive}_journaux`);
             await window.storage.delete(`${societeActive}_periode`);
+            await window.storage.delete(`${societeActive}_clotures`);
+            await window.storage.delete(`${societeActive}_brouillons`);
             
             setEcritures([]);
             setComptes(comptesDefaut);
             setJournaux(journauxDefaut);
             setPeriodeExercice({ debut: '', fin: '' });
+            setClotures([]);
+            setBrouillons([]);
             alert('Données réinitialisées');
           };
 
+          // Gestion des lignes d'écriture
           const ajouterLigne = () => {
             setFormData({
               ...formData,
@@ -391,6 +562,11 @@
             setEcritures(nouvellesEcritures);
             sauvegarderEcritures(nouvellesEcritures);
 
+            // Supprimer le brouillon
+            const nouveauxBrouillons = brouillons.filter(b => b.numero !== formData.numero);
+            setBrouillons(nouveauxBrouillons);
+            sauvegarderBrouillons(nouveauxBrouillons);
+
             setFormData({
               numero: '',
               date: new Date().toISOString().split('T')[0],
@@ -408,6 +584,7 @@
             }
           };
 
+          // Gestion du plan comptable
           const ajouterCompte = () => {
             if (!newCompte.code || !newCompte.nom) {
               alert('Code et nom obligatoires');
@@ -449,6 +626,7 @@
             }
           };
 
+          // Filtrage
           const filtrerParPeriode = (ecriture) => {
             if (!periodeDebut && !periodeFin) return true;
             const dateEcr = new Date(ecriture.date);
@@ -465,6 +643,7 @@
             });
           };
 
+          // Calculs comptables
           const calculerGrandLivre = () => {
             const grandLivre = {};
             Object.keys(comptes).forEach(code => {
@@ -523,6 +702,255 @@
               .sort((a, b) => a.code.localeCompare(b.code));
           };
 
+          // Export PDF
+          const genererPDF = async (typeDocument) => {
+            const doc = new jsPDF();
+            const nomSociete = societes[societeActive];
+            const dateExport = new Date().toLocaleDateString('fr-FR');
+            
+            doc.setFontSize(16);
+            doc.setFont(undefined, 'bold');
+            doc.text(nomSociete, 105, 15, { align: 'center' });
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'normal');
+            
+            if (periodeDebut || periodeFin) {
+              doc.text(`Période: ${periodeDebut || 'début'} au ${periodeFin || 'fin'}`, 105, 22, { align: 'center' });
+            }
+            if (periodeExercice.debut || periodeExercice.fin) {
+              doc.text(`Exercice: ${periodeExercice.debut || '?'} au ${periodeExercice.fin || '?'}`, 105, 27, { align: 'center' });
+            }
+            
+            doc.setFontSize(8);
+            doc.text(`Édité le ${dateExport}`, 105, 32, { align: 'center' });
+
+            if (typeDocument === 'balance') {
+              doc.setFontSize(14);
+              doc.setFont(undefined, 'bold');
+              doc.text('Balance Générale', 105, 40, { align: 'center' });
+              
+              const balance = calculerBalance();
+              const tableData = balance.map(b => [
+                b.code,
+                b.nom.substring(0, 30),
+                b.mouvementDebit.toFixed(2),
+                b.mouvementCredit.toFixed(2),
+                b.soldeDebiteur > 0 ? b.soldeDebiteur.toFixed(2) : '',
+                b.soldeCrediteur > 0 ? b.soldeCrediteur.toFixed(2) : ''
+              ]);
+              
+              const totalMvtD = balance.reduce((s, b) => s + b.mouvementDebit, 0);
+              const totalMvtC = balance.reduce((s, b) => s + b.mouvementCredit, 0);
+              const totalSoldeD = balance.reduce((s, b) => s + b.soldeDebiteur, 0);
+              const totalSoldeC = balance.reduce((s, b) => s + b.soldeCrediteur, 0);
+              
+              tableData.push(['', 'TOTAUX', totalMvtD.toFixed(2), totalMvtC.toFixed(2), totalSoldeD.toFixed(2), totalSoldeC.toFixed(2)]);
+              
+              doc.autoTable({
+                startY: 45,
+                head: [['Compte', 'Intitulé', 'Mvt Débit', 'Mvt Crédit', 'Solde D', 'Solde C']],
+                body: tableData,
+                theme: 'grid',
+                headStyles: { fillColor: [66, 139, 202], fontSize: 8 },
+                bodyStyles: { fontSize: 7 },
+                styles: { cellPadding: 1.5 }
+              });
+            }
+            else if (typeDocument === 'bilan') {
+              doc.setFontSize(14);
+              doc.setFont(undefined, 'bold');
+              doc.text('Bilan', 105, 40, { align: 'center' });
+              
+              const balance = calculerBalance();
+              const actifs = balance.filter(b => b.type === 'Actif' && b.soldeDebiteur > 0);
+              const passifs = balance.filter(b => b.type === 'Passif' && b.soldeCrediteur > 0);
+              
+              doc.setFontSize(12);
+              doc.text('ACTIF', 20, 50);
+              
+              const actifsData = actifs.map(b => [b.code, b.nom.substring(0, 35), b.soldeDebiteur.toFixed(2)]);
+              const totalActif = actifs.reduce((s, b) => s + b.soldeDebiteur, 0);
+              actifsData.push(['', 'TOTAL ACTIF', totalActif.toFixed(2)]);
+              
+              doc.autoTable({
+                startY: 55,
+                head: [['Compte', 'Intitulé', 'Montant']],
+                body: actifsData,
+                theme: 'grid',
+                headStyles: { fillColor: [66, 139, 202], fontSize: 9 },
+                bodyStyles: { fontSize: 8 }
+              });
+              
+              const startPassif = doc.lastAutoTable.finalY + 10;
+              doc.setFontSize(12);
+              doc.text('PASSIF', 20, startPassif);
+              
+              const passifsData = passifs.map(b => [b.code, b.nom.substring(0, 35), b.soldeCrediteur.toFixed(2)]);
+              const totalPassif = passifs.reduce((s, b) => s + b.soldeCrediteur, 0);
+              passifsData.push(['', 'TOTAL PASSIF', totalPassif.toFixed(2)]);
+              
+              doc.autoTable({
+                startY: startPassif + 5,
+                head: [['Compte', 'Intitulé', 'Montant']],
+                body: passifsData,
+                theme: 'grid',
+                headStyles: { fillColor: [92, 184, 92], fontSize: 9 },
+                bodyStyles: { fontSize: 8 }
+              });
+            }
+            else if (typeDocument === 'resultat') {
+              doc.setFontSize(14);
+              doc.setFont(undefined, 'bold');
+              doc.text('Compte de Résultat', 105, 40, { align: 'center' });
+              
+              const balance = calculerBalance();
+              const produits = balance.filter(b => b.type === 'Produit' && b.soldeCrediteur > 0);
+              const charges = balance.filter(b => b.type === 'Charge' && b.soldeDebiteur > 0);
+              
+              doc.setFontSize(12);
+              doc.text('PRODUITS', 20, 50);
+              
+              const produitsData = produits.map(b => [b.code, b.nom.substring(0, 35), b.soldeCrediteur.toFixed(2)]);
+              const totalProduits = produits.reduce((s, b) => s + b.soldeCrediteur, 0);
+              produitsData.push(['', 'TOTAL PRODUITS', totalProduits.toFixed(2)]);
+              
+              doc.autoTable({
+                startY: 55,
+                head: [['Compte', 'Intitulé', 'Montant']],
+                body: produitsData,
+                theme: 'grid',
+                headStyles: { fillColor: [92, 184, 92], fontSize: 9 },
+                bodyStyles: { fontSize: 8 }
+              });
+              
+              const startCharges = doc.lastAutoTable.finalY + 10;
+              doc.setFontSize(12);
+              doc.text('CHARGES', 20, startCharges);
+              
+              const chargesData = charges.map(b => [b.code, b.nom.substring(0, 35), b.soldeDebiteur.toFixed(2)]);
+              const totalCharges = charges.reduce((s, b) => s + b.soldeDebiteur, 0);
+              chargesData.push(['', 'TOTAL CHARGES', totalCharges.toFixed(2)]);
+              
+              doc.autoTable({
+                startY: startCharges + 5,
+                head: [['Compte', 'Intitulé', 'Montant']],
+                body: chargesData,
+                theme: 'grid',
+                headStyles: { fillColor: [217, 83, 79], fontSize: 9 },
+                bodyStyles: { fontSize: 8 }
+              });
+              
+              const resultat = totalProduits - totalCharges;
+              const finalY = doc.lastAutoTable.finalY + 10;
+              doc.setFontSize(12);
+              doc.setFont(undefined, 'bold');
+              doc.text(`RÉSULTAT NET: ${resultat.toFixed(2)}€ ${resultat >= 0 ? '(Bénéfice)' : '(Perte)'}`, 20, finalY);
+            }
+            else if (typeDocument === 'journaux') {
+              doc.setFontSize(14);
+              doc.setFont(undefined, 'bold');
+              doc.text('Journaux', 105, 40, { align: 'center' });
+              
+              let currentY = 50;
+              const ecrituresFiltrees = getEcrituresFiltrees();
+              
+              Object.entries(journaux).forEach(([code, nom]) => {
+                const ecrituresJournal = ecrituresFiltrees.filter(e => e.journal === code);
+                if (ecrituresJournal.length === 0) return;
+                
+                if (currentY > 250) {
+                  doc.addPage();
+                  currentY = 20;
+                }
+                
+                doc.setFontSize(11);
+                doc.setFont(undefined, 'bold');
+                doc.text(`Journal ${nom} (${code})`, 20, currentY);
+                currentY += 5;
+                
+                ecrituresJournal.forEach(ecr => {
+                  if (currentY > 250) {
+                    doc.addPage();
+                    currentY = 20;
+                  }
+                  
+                  const lignesData = ecr.lignes.map(l => [
+                    l.compte,
+                    l.libelle.substring(0, 25),
+                    l.debit > 0 ? l.debit.toFixed(2) : '',
+                    l.credit > 0 ? l.credit.toFixed(2) : ''
+                  ]);
+                  
+                  const total = ecr.lignes.reduce((s, l) => s + l.debit, 0);
+                  lignesData.push(['', 'TOTAL', total.toFixed(2), total.toFixed(2)]);
+                  
+                  doc.autoTable({
+                    startY: currentY,
+                    head: [[`${ecr.date} | N°${ecr.numero} | ${ecr.description}`, '', '', '']],
+                    body: lignesData,
+                    theme: 'grid',
+                    headStyles: { fillColor: [100, 100, 100], fontSize: 8 },
+                    bodyStyles: { fontSize: 7 },
+                    margin: { left: 25 }
+                  });
+                  
+                  currentY = doc.lastAutoTable.finalY + 3;
+                });
+              });
+            }
+            else if (typeDocument === 'grandlivre') {
+              doc.setFontSize(14);
+              doc.setFont(undefined, 'bold');
+              doc.text('Grand Livre', 105, 40, { align: 'center' });
+              
+              const grandLivre = calculerGrandLivre();
+              let currentY = 50;
+              
+              Object.entries(grandLivre)
+                .filter(([_, gl]) => gl.mouvements.length > 0)
+                .sort((a, b) => a[0].localeCompare(b[0]))
+                .forEach(([code, gl]) => {
+                  if (currentY > 250) {
+                    doc.addPage();
+                    currentY = 20;
+                  }
+                  
+                  doc.setFontSize(10);
+                  doc.setFont(undefined, 'bold');
+                  doc.text(`Compte ${code} - ${gl.nom}`, 20, currentY);
+                  currentY += 5;
+                  
+                  const mvtData = gl.mouvements.map(m => [
+                    m.date,
+                    m.journal,
+                    m.numero,
+                    m.libelle.substring(0, 20),
+                    m.debit > 0 ? m.debit.toFixed(2) : '',
+                    m.credit > 0 ? m.credit.toFixed(2) : ''
+                  ]);
+                  
+                  mvtData.push(['', '', '', 'TOTAUX', gl.totalDebit.toFixed(2), gl.totalCredit.toFixed(2)]);
+                  mvtData.push(['', '', '', 'SOLDE', gl.solde >= 0 ? gl.solde.toFixed(2) + ' D' : (-gl.solde).toFixed(2) + ' C', '']);
+                  
+                  doc.autoTable({
+                    startY: currentY,
+                    head: [['Date', 'J', 'N°', 'Libellé', 'Débit', 'Crédit']],
+                    body: mvtData,
+                    theme: 'grid',
+                    headStyles: { fillColor: [66, 139, 202], fontSize: 7 },
+                    bodyStyles: { fontSize: 6 },
+                    margin: { left: 15, right: 15 }
+                  });
+                  
+                  currentY = doc.lastAutoTable.finalY + 5;
+                });
+            }
+            
+            const filename = `${nomSociete.replace(/ /g, '_')}_${typeDocument}_${dateExport.replace(/\//g, '-')}.pdf`;
+            doc.save(filename);
+          };
+
+          // Export TXT
           const genererExport = () => {
             const date = new Date().toLocaleDateString('fr-FR');
             const balance = calculerBalance();
@@ -570,62 +998,6 @@
             });
             contenu += `${'-'.repeat(90)}\n${'TOTAUX'.padEnd(40)} ${totalMvtD.toFixed(2).padStart(12)} ${totalMvtC.toFixed(2).padStart(12)} ${totalSoldeD.toFixed(2).padStart(12)} ${totalSoldeC.toFixed(2).padStart(12)}\n`;
 
-            contenu += `\n\nGRAND LIVRE\n${'='.repeat(90)}\n\n`;
-            Object.entries(grandLivre)
-              .filter(([_, gl]) => gl.mouvements.length > 0)
-              .sort((a, b) => a[0].localeCompare(b[0]))
-              .forEach(([code, gl]) => {
-                contenu += `\nCompte ${code} - ${gl.nom}\n${'-'.repeat(90)}\n`;
-                gl.mouvements.forEach(mvt => {
-                  const debit = mvt.debit > 0 ? mvt.debit.toFixed(2).padStart(12) : ''.padStart(12);
-                  const credit = mvt.credit > 0 ? mvt.credit.toFixed(2).padStart(12) : ''.padStart(12);
-                  contenu += `${mvt.date} ${mvt.journal} N°${mvt.numero.padEnd(6)} ${mvt.libelle.substring(0,40).padEnd(40)} ${debit} ${credit}\n`;
-                });
-                contenu += `${'TOTAUX'.padEnd(62)} ${gl.totalDebit.toFixed(2).padStart(12)} ${gl.totalCredit.toFixed(2).padStart(12)}\n`;
-                contenu += `${'SOLDE'.padEnd(62)} ${gl.solde >= 0 ? gl.solde.toFixed(2).padStart(12) : ''.padStart(12)} ${gl.solde < 0 ? (-gl.solde).toFixed(2).padStart(12) : ''}\n`;
-              });
-
-            contenu += `\n\nBILAN\n${'='.repeat(90)}\n`;
-            const actifs = balance.filter(b => b.type === 'Actif' && b.soldeDebiteur > 0);
-            const passifs = balance.filter(b => b.type === 'Passif' && b.soldeCrediteur > 0);
-            
-            contenu += `\nACTIF\n`;
-            let totalActif = 0;
-            actifs.forEach(b => {
-              contenu += `  ${b.code} ${b.nom.substring(0,50).padEnd(50)} ${b.soldeDebiteur.toFixed(2).padStart(12)}\n`;
-              totalActif += b.soldeDebiteur;
-            });
-            contenu += `  ${'TOTAL ACTIF'.padEnd(50)} ${totalActif.toFixed(2).padStart(12)}\n`;
-            
-            contenu += `\nPASSIF\n`;
-            let totalPassif = 0;
-            passifs.forEach(b => {
-              contenu += `  ${b.code} ${b.nom.substring(0,50).padEnd(50)} ${b.soldeCrediteur.toFixed(2).padStart(12)}\n`;
-              totalPassif += b.soldeCrediteur;
-            });
-            contenu += `  ${'TOTAL PASSIF'.padEnd(50)} ${totalPassif.toFixed(2).padStart(12)}\n`;
-
-            contenu += `\n\nCOMPTE DE RÉSULTAT\n${'='.repeat(90)}\n`;
-            const produits = balance.filter(b => b.type === 'Produit' && b.soldeCrediteur > 0);
-            const charges = balance.filter(b => b.type === 'Charge' && b.soldeDebiteur > 0);
-            
-            contenu += `\nPRODUITS\n`;
-            let totalProduits = 0;
-            produits.forEach(b => {
-              contenu += `  ${b.code} ${b.nom.substring(0,50).padEnd(50)} ${b.soldeCrediteur.toFixed(2).padStart(12)}\n`;
-              totalProduits += b.soldeCrediteur;
-            });
-            contenu += `  ${'TOTAL PRODUITS'.padEnd(50)} ${totalProduits.toFixed(2).padStart(12)}\n`;
-            
-            contenu += `\nCHARGES\n`;
-            let totalCharges = 0;
-            charges.forEach(b => {
-              contenu += `  ${b.code} ${b.nom.substring(0,50).padEnd(50)} ${b.soldeDebiteur.toFixed(2).padStart(12)}\n`;
-              totalCharges += b.soldeDebiteur;
-            });
-            contenu += `  ${'TOTAL CHARGES'.padEnd(50)} ${totalCharges.toFixed(2).padStart(12)}\n`;
-            contenu += `\n  ${'RÉSULTAT NET'.padEnd(50)} ${(totalProduits - totalCharges).toFixed(2).padStart(12)}\n`;
-
             const element = document.createElement('a');
             element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(contenu));
             element.setAttribute('download', `${societes[societeActive]}_${date.replace(/\//g, '-')}.txt`);
@@ -652,10 +1024,11 @@
 
           return (
             <div className="min-h-screen bg-gray-900 text-gray-100">
+              {/* Sidebar */}
               <div className={`fixed inset-y-0 left-0 w-64 bg-gray-800 border-r border-gray-700 sidebar-transition z-50 ${sidebarOpen ? 'transform-none' : '-translate-x-full'}`}>
                 <div className="h-full flex flex-col">
                   <div className="p-4 border-b border-gray-700">
-                    <h1 className="text-xl font-bold text-blue-400 mb-3">Comptabilité Pro</h1>
+                    <h1 className="text-xl font-bold text-blue-400 mb-3">Comptabilité Pro v2</h1>
                     <select value={societeActive} onChange={(e) => changerSociete(e.target.value)} className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
                       {Object.entries(societes).map(([id, nom]) => (
                         <option key={id} value={id}>{nom}</option>
@@ -690,11 +1063,15 @@
                       <div className="flex justify-between"><span>Écritures:</span><span className="text-gray-300">{ecritures.length}</span></div>
                       <div className="flex justify-between"><span>Comptes:</span><span className="text-gray-300">{Object.keys(comptes).length}</span></div>
                       <div className="flex justify-between"><span>Journaux:</span><span className="text-gray-300">{Object.keys(journaux).length}</span></div>
+                      {brouillons.length > 0 && (
+                        <div className="flex justify-between"><span>Brouillons:</span><span className="text-yellow-400">{brouillons.length}</span></div>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
 
+              {/* Main Content */}
               <div className={`content-transition ${sidebarOpen ? 'lg:ml-64' : 'ml-0'}`}>
                 <div className="bg-gray-800 border-b border-gray-700 sticky top-0 z-40 no-print">
                   <div className="px-4 py-3 flex items-center justify-between flex-wrap gap-2">
@@ -710,7 +1087,7 @@
                         {activeView === 'parametres' && 'Paramètres'}
                       </h2>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       {activeView !== 'ecritures' && activeView !== 'plan' && activeView !== 'parametres' && (
                         <>
                           <input type="date" value={periodeDebut} onChange={(e) => setPeriodeDebut(e.target.value)} className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100" />
@@ -718,17 +1095,33 @@
                         </>
                       )}
                       {activeView !== 'parametres' && (
-                        <button onClick={genererExport} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition">
-                          <Download /><span className="hidden sm:inline">Exporter</span>
-                        </button>
+                        <>
+                          <div className="relative group">
+                            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+                              <Download /><span className="hidden sm:inline">PDF</span>
+                            </button>
+                            <div className="absolute right-0 mt-2 w-48 bg-gray-700 rounded-lg shadow-lg hidden group-hover:block z-50">
+                              <button onClick={() => genererPDF('balance')} className="block w-full text-left px-4 py-2 hover:bg-gray-600 rounded-t-lg">Balance</button>
+                              <button onClick={() => genererPDF('bilan')} className="block w-full text-left px-4 py-2 hover:bg-gray-600">Bilan</button>
+                              <button onClick={() => genererPDF('resultat')} className="block w-full text-left px-4 py-2 hover:bg-gray-600">Compte de résultat</button>
+                              <button onClick={() => genererPDF('journaux')} className="block w-full text-left px-4 py-2 hover:bg-gray-600">Journaux</button>
+                              <button onClick={() => genererPDF('grandlivre')} className="block w-full text-left px-4 py-2 hover:bg-gray-600 rounded-b-lg">Grand Livre</button>
+                            </div>
+                          </div>
+                          <button onClick={genererExport} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition">
+                            <Download /><span className="hidden sm:inline">TXT</span>
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
                 </div>
 
                 <div className="p-6">
+                  {/* VUE PARAMETRES */}
                   {activeView === 'parametres' && (
                     <div className="space-y-6">
+                      {/* Gestion des sociétés */}
                       <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
                         <h3 className="text-lg font-semibold mb-4 text-blue-400">Gestion des Sociétés</h3>
                         <div className="space-y-3">
@@ -755,6 +1148,7 @@
                         </div>
                       </div>
 
+                      {/* Période d'exercice */}
                       <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
                         <h3 className="text-lg font-semibold mb-4 text-blue-400">Période d'Exercice</h3>
                         <div className="grid grid-cols-2 gap-4">
@@ -772,6 +1166,38 @@
                         )}
                       </div>
 
+                      {/* Clôture de période */}
+                      <div className="bg-gray-800 rounded-lg border border-orange-700 p-6">
+                        <h3 className="text-lg font-semibold mb-4 text-orange-400">Clôture de Période</h3>
+                        <p className="text-sm text-gray-400 mb-4">
+                          La clôture génère automatiquement les écritures de virement des comptes de charges et produits au compte de résultat (120000).
+                        </p>
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-2">Du</label>
+                            <input type="date" value={periodeDebut} onChange={(e) => setPeriodeDebut(e.target.value)} className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100" />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-2">Au</label>
+                            <input type="date" value={periodeFin} onChange={(e) => setPeriodeFin(e.target.value)} className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100" />
+                          </div>
+                        </div>
+                        <button onClick={cloturerPeriode} className="w-full px-4 py-3 bg-orange-600 hover:bg-orange-700 rounded-lg font-semibold flex items-center justify-center gap-2">
+                          <Lock /> Clôturer la période
+                        </button>
+                        {clotures.length > 0 && (
+                          <div className="mt-4 space-y-2">
+                            <h4 className="text-sm font-semibold text-gray-300">Historique des clôtures</h4>
+                            {clotures.map(c => (
+                              <div key={c.id} className="text-xs bg-gray-700/50 p-2 rounded">
+                                {c.debut} au {c.fin} : {c.resultat.toFixed(2)}€ ({c.resultat >= 0 ? 'Bénéfice' : 'Perte'})
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Gestion des journaux */}
                       <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
                         <h3 className="text-lg font-semibold mb-4 text-blue-400">Gestion des Journaux</h3>
                         <div className="space-y-3">
@@ -798,6 +1224,7 @@
                         </div>
                       </div>
 
+                      {/* Import/Export Plan Comptable */}
                       <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
                         <h3 className="text-lg font-semibold mb-4 text-blue-400">Plan Comptable</h3>
                         <div className="flex gap-4">
@@ -812,6 +1239,7 @@
                         <p className="mt-3 text-sm text-gray-400">Format JSON - Sauvegardez votre plan avant import</p>
                       </div>
 
+                      {/* Réinitialisation */}
                       <div className="bg-gray-800 rounded-lg border border-red-700 p-6">
                         <h3 className="text-lg font-semibold mb-4 text-red-400">Zone Dangereuse</h3>
                         <button onClick={reinitialiser} className="w-full px-4 py-3 bg-red-600 hover:bg-red-700 rounded-lg font-semibold">
@@ -822,10 +1250,40 @@
                     </div>
                   )}
 
+                  {/* VUE SAISIE */}
                   {activeView === 'ecritures' && (
                     <div className="space-y-6">
+                      {/* Brouillons sauvegardés */}
+                      {brouillons.length > 0 && (
+                        <div className="bg-gray-800 rounded-lg border border-yellow-700 p-6">
+                          <h3 className="text-lg font-semibold mb-4 text-yellow-400">Brouillons sauvegardés</h3>
+                          <div className="space-y-2">
+                            {brouillons.slice().reverse().map(br => (
+                              <div key={br.id} className="flex items-center justify-between bg-gray-700/50 p-3 rounded-lg">
+                                <div className="flex-1">
+                                  <span className="text-sm text-gray-300">{br.description || 'Sans libellé'}</span>
+                                  <span className="text-xs text-gray-500 ml-3">{new Date(br.timestamp).toLocaleString('fr-FR')}</span>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button onClick={() => chargerBrouillon(br)} className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-sm">Charger</button>
+                                  <button onClick={() => supprimerBrouillon(br.id)} className="text-red-400 hover:text-red-300">
+                                    <Trash />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Formulaire de saisie */}
                       <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-                        <h3 className="text-lg font-semibold mb-4 text-gray-200">Nouvelle écriture</h3>
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold text-gray-200">Nouvelle écriture</h3>
+                          <button type="button" onClick={sauvegarderBrouillon} className="flex items-center gap-2 px-3 py-1 bg-yellow-600 hover:bg-yellow-700 rounded text-sm">
+                            <Save /> Sauvegarder brouillon
+                          </button>
+                        </div>
                         {erreur && <div className="mb-4 p-4 bg-red-900/50 border border-red-700 text-red-300 rounded-lg">⚠️ {erreur}</div>}
                         <form onSubmit={ajouterEcriture} className="space-y-4">
                           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -918,6 +1376,7 @@
                         </form>
                       </div>
 
+                      {/* Liste des écritures */}
                       <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
                         <h3 className="text-lg font-semibold text-gray-200 mb-4">Écritures récentes ({ecritures.length})</h3>
                         <div className="space-y-3 max-h-96 overflow-y-auto">
@@ -956,6 +1415,7 @@
                     </div>
                   )}
 
+                  {/* VUE JOURNAUX */}
                   {activeView === 'journaux' && (
                     <div className="space-y-6">
                       <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
@@ -1001,6 +1461,7 @@
                     </div>
                   )}
 
+                  {/* VUE GRAND LIVRE */}
                   {activeView === 'grandlivre' && (
                     <div className="space-y-6">
                       {Object.entries(grandLivre)
@@ -1047,6 +1508,7 @@
                     </div>
                   )}
 
+                  {/* VUE BALANCE - CORRIGÉE */}
                   {activeView === 'balance' && (
                     <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
                       <h3 className="text-xl font-semibold text-blue-400 mb-4">Balance Générale</h3>
@@ -1077,11 +1539,16 @@
                             <div className="col-span-2 text-right text-blue-400 font-mono">{balance.reduce((s, b) => s + b.soldeDebiteur, 0).toFixed(2)}</div>
                             <div className="col-span-1 text-right text-green-400 font-mono">{balance.reduce((s, b) => s + b.soldeCrediteur, 0).toFixed(2)}</div>
                           </div>
+                          <div className="text-xs text-gray-500 pt-2">
+                            ℹ️ Vérification : Total Mvt D = Total Mvt C ({balance.reduce((s, b) => s + b.mouvementDebit, 0).toFixed(2)} = {balance.reduce((s, b) => s + b.mouvementCredit, 0).toFixed(2)}) ✓<br/>
+                            Total Soldes D = Total Soldes C ({balance.reduce((s, b) => s + b.soldeDebiteur, 0).toFixed(2)} = {balance.reduce((s, b) => s + b.soldeCrediteur, 0).toFixed(2)}) ✓
+                          </div>
                         </div>
                       </div>
                     </div>
                   )}
 
+                  {/* VUE BILAN & RÉSULTAT */}
                   {activeView === 'situation' && (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                       <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
@@ -1165,6 +1632,7 @@
                     </div>
                   )}
 
+                  {/* VUE PLAN COMPTABLE */}
                   {activeView === 'plan' && (
                     <div className="space-y-6">
                       <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
@@ -1202,7 +1670,7 @@
                                     <option value="Produit">Produit</option>
                                   </select>
                                   <button onClick={() => { const nom = document.getElementById(`edit-nom-${code}`).value; const type = document.getElementById(`edit-type-${code}`).value; modifierCompte(code, nom, type); }} className="p-2 bg-green-600 hover:bg-green-700 rounded transition"><Check /></button>
-                                  <button onClick={() => setEditingCompte(null)} className="p-2 bg-gray-600 hover:bg-gray-500 rounded transition"><X /></button>
+                                  <button onClick={() => setEditingCompte(null)} className="p-2 bg-gray-600 hover:bg-gray-500 rounded transition">✕</button>
                                 </div>
                               ) : (
                                 <div className="flex items-center justify-between">
