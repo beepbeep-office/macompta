@@ -918,6 +918,46 @@
               .sort((a, b) => a.code.localeCompare(b.code));
           };
 
+          // Balance excluant les écritures de clôture (pour le compte de résultat)
+          const calculerBalanceHorsClôture = () => {
+            const glHC = {};
+            Object.keys(comptes).forEach(code => {
+              glHC[code] = {
+                nom: comptes[code].nom,
+                type: comptes[code].type,
+                totalDebit: 0,
+                totalCredit: 0,
+              };
+            });
+
+            getEcrituresFiltrees()
+              .filter(e => !e.numero.startsWith('CLOT-'))
+              .forEach(ecriture => {
+                ecriture.lignes.forEach(ligne => {
+                  if (glHC[ligne.compte]) {
+                    glHC[ligne.compte].totalDebit += ligne.debit;
+                    glHC[ligne.compte].totalCredit += ligne.credit;
+                  }
+                });
+              });
+
+            return Object.entries(glHC)
+              .filter(([_, gl]) => gl.totalDebit > 0 || gl.totalCredit > 0)
+              .map(([code, gl]) => {
+                const rawSolde = gl.totalDebit - gl.totalCredit;
+                return {
+                  code,
+                  nom: gl.nom,
+                  type: gl.type,
+                  mouvementDebit: gl.totalDebit,
+                  mouvementCredit: gl.totalCredit,
+                  soldeDebiteur:  rawSolde > 0 ?  rawSolde : 0,
+                  soldeCrediteur: rawSolde < 0 ? -rawSolde : 0
+                };
+              })
+              .sort((a, b) => a.code.localeCompare(b.code));
+          };
+
           // Export PDF
           const genererPDF = async (typeDocument) => {
             const doc = new jsPDF();
@@ -1019,9 +1059,9 @@
               doc.setFont(undefined, 'bold');
               doc.text('Compte de Résultat', 105, 40, { align: 'center' });
               
-              const balance = calculerBalance();
-              const produits = balance.filter(b => b.type === 'Produit' && b.soldeCrediteur > 0);
-              const charges = balance.filter(b => b.type === 'Charge' && b.soldeDebiteur > 0);
+              const balancePDF = calculerBalanceHorsClôture();
+              const produits = balancePDF.filter(b => b.type === 'Produit' && b.soldeCrediteur > 0);
+              const charges = balancePDF.filter(b => b.type === 'Charge' && b.soldeDebiteur > 0);
               
               doc.setFontSize(12);
               doc.text('PRODUITS', 20, 50);
@@ -1237,6 +1277,7 @@
 
           const { totalDebit, totalCredit } = calculerTotaux();
           const balance = calculerBalance();
+          const balanceHC = calculerBalanceHorsClôture();
           const grandLivre = calculerGrandLivre();
 
           return (
@@ -1786,6 +1827,9 @@
                                   <span className={mvtOk ? 'text-green-400' : 'text-red-400'}>{mvtOk ? ' ✓' : ' ✗ DÉSÉQUILIBRE'}</span><br/>
                                   Total Soldes D = Total Soldes C ({totalSolD.toFixed(2)} = {totalSolC.toFixed(2)})
                                   <span className={soldOk ? 'text-green-400' : 'text-red-400'}>{soldOk ? ' ✓' : ' ✗ DÉSÉQUILIBRE'}</span>
+                                  {clotures.length > 0 && (
+                                    <><br/><span className="text-orange-400">🔒 {clotures.length} clôture(s) effectuée(s) — les écritures CLOT-P/CLOT-C sont incluses dans cette balance. Le résultat est porté au compte 120000.</span></>
+                                  )}
                                 </>
                               );
                             })()}
@@ -1839,7 +1883,7 @@
                           <div>
                             <h4 className="font-semibold text-gray-300 mb-3">Produits</h4>
                             <div className="space-y-2">
-                              {balance.filter(b => b.type === 'Produit' && b.soldeCrediteur > 0).map(b => (
+                              {balanceHC.filter(b => b.type === 'Produit' && b.soldeCrediteur > 0).map(b => (
                                 <div key={b.code} className="flex justify-between text-sm py-2 border-b border-gray-700/50">
                                   <span className="text-gray-400 font-mono">{b.code} {b.nom}</span>
                                   <span className="font-mono text-gray-200">{b.soldeCrediteur.toFixed(2)}€</span>
@@ -1847,14 +1891,14 @@
                               ))}
                               <div className="flex justify-between font-bold text-base pt-3 border-t-2 border-gray-600">
                                 <span className="text-gray-200">TOTAL PRODUITS</span>
-                                <span className="text-green-400 font-mono">{balance.filter(b => b.type === 'Produit').reduce((s, b) => s + b.soldeCrediteur, 0).toFixed(2)}€</span>
+                                <span className="text-green-400 font-mono">{balanceHC.filter(b => b.type === 'Produit').reduce((s, b) => s + b.soldeCrediteur, 0).toFixed(2)}€</span>
                               </div>
                             </div>
                           </div>
                           <div>
                             <h4 className="font-semibold text-gray-300 mb-3">Charges</h4>
                             <div className="space-y-2">
-                              {balance.filter(b => b.type === 'Charge' && b.soldeDebiteur > 0).map(b => (
+                              {balanceHC.filter(b => b.type === 'Charge' && b.soldeDebiteur > 0).map(b => (
                                 <div key={b.code} className="flex justify-between text-sm py-2 border-b border-gray-700/50">
                                   <span className="text-gray-400 font-mono">{b.code} {b.nom}</span>
                                   <span className="font-mono text-gray-200">{b.soldeDebiteur.toFixed(2)}€</span>
@@ -1862,17 +1906,63 @@
                               ))}
                               <div className="flex justify-between font-bold text-base pt-3 border-t-2 border-gray-600">
                                 <span className="text-gray-200">TOTAL CHARGES</span>
-                                <span className="text-red-400 font-mono">{balance.filter(b => b.type === 'Charge').reduce((s, b) => s + b.soldeDebiteur, 0).toFixed(2)}€</span>
+                                <span className="text-red-400 font-mono">{balanceHC.filter(b => b.type === 'Charge').reduce((s, b) => s + b.soldeDebiteur, 0).toFixed(2)}€</span>
                               </div>
                             </div>
                           </div>
                           <div className="border-t-2 border-gray-600 pt-4">
-                            <div className="flex justify-between text-xl font-bold">
-                              <span className="text-gray-200">RÉSULTAT NET</span>
-                              <span className={`font-mono ${(balance.filter(b => b.type === 'Produit').reduce((s, b) => s + b.soldeCrediteur, 0) - balance.filter(b => b.type === 'Charge').reduce((s, b) => s + b.soldeDebiteur, 0)) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                {(balance.filter(b => b.type === 'Produit').reduce((s, b) => s + b.soldeCrediteur, 0) - balance.filter(b => b.type === 'Charge').reduce((s, b) => s + b.soldeDebiteur, 0)).toFixed(2)}€
-                              </span>
-                            </div>
+                            {(() => {
+                              const totalProduits = balanceHC.filter(b => b.type === 'Produit').reduce((s, b) => s + b.soldeCrediteur, 0);
+                              const totalCharges  = balanceHC.filter(b => b.type === 'Charge').reduce((s, b) => s + b.soldeDebiteur, 0);
+                              const resultatNet   = totalProduits - totalCharges;
+                              // Solde du compte 120000 dans la balance complète (après clôture)
+                              const c120 = balance.find(b => b.code === '120000');
+                              const solde120 = c120 ? (c120.soldeCrediteur - c120.soldeDebiteur) : 0;
+                              const periodeCloturee = clotures.length > 0 && (
+                                balance.filter(b => b.type === 'Produit').every(b => b.soldeCrediteur === 0) &&
+                                balance.filter(b => b.type === 'Charge').every(b => b.soldeDebiteur === 0)
+                              );
+                              return (
+                                <>
+                                  <div className="flex justify-between text-xl font-bold mb-3">
+                                    <span className="text-gray-200">RÉSULTAT NET</span>
+                                    <span className={`font-mono ${resultatNet >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                      {resultatNet.toFixed(2)}€
+                                    </span>
+                                  </div>
+                                  {/* Affichage du compte 120000 après clôture */}
+                                  {clotures.length > 0 && (
+                                    <div className={`mt-3 p-3 rounded-lg border ${periodeCloturee ? 'bg-orange-900/30 border-orange-600' : 'bg-gray-700/50 border-gray-600'}`}>
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-xs font-semibold text-orange-300">🔒 Résultat après clôture — Compte 120000</span>
+                                      </div>
+                                      {c120 ? (
+                                        <>
+                                          <div className="flex justify-between text-sm mt-1">
+                                            <span className="text-gray-400">Solde 120000 (Résultat de l'exercice)</span>
+                                            <span className={`font-mono font-bold ${solde120 >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                              {solde120.toFixed(2)}€ {solde120 >= 0 ? '(Bénéfice)' : '(Perte)'}
+                                            </span>
+                                          </div>
+                                          {Math.abs(solde120 - resultatNet) > 0.01 && (
+                                            <div className="text-xs text-yellow-400 mt-1">
+                                              ⚠️ Écart de {Math.abs(solde120 - resultatNet).toFixed(2)}€ : le compte 120000 contient peut-être des reports d'exercices antérieurs.
+                                            </div>
+                                          )}
+                                        </>
+                                      ) : (
+                                        <div className="text-xs text-red-400 mt-1">
+                                          ⚠️ Compte 120000 absent de la balance — vérifiez le plan comptable.
+                                        </div>
+                                      )}
+                                      <div className="text-xs text-gray-500 mt-2">
+                                        {clotures.length} clôture(s) effectuée(s) — charges et produits virés au compte de résultat.
+                                      </div>
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>
