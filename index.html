@@ -342,6 +342,49 @@
           const [journalFiltre, setJournalFiltre] = useState('');
           const [newJournal, setNewJournal] = useState({ code: '', nom: '' });
           const [newSociete, setNewSociete] = useState('');
+          const [editingSocieteId, setEditingSocieteId]   = useState(null);
+          const [editingSocieteForm, setEditingSocieteForm] = useState(null);
+          const [loadingEditSociete, setLoadingEditSociete] = useState(false);
+
+          // ── NOUVEAU : Paramètres société (facturation) ──────────────────
+          const [paramsSociete, setParamsSociete] = useState({
+            raisonSociale: '', formeJuridique: 'SARL', capital: '',
+            siren: '', siret: '', tvaNum: '', rcs: '',
+            adresse: '', cp: '', ville: '', pays: 'France',
+            email: '', telephone: '',
+            iban: '', bic: '', banque: '',
+            conditionsPaiement: '30 jours net',
+            penalitesRetard: "Triple du taux d'intérêt légal",
+            escompte: 'Aucun escompte pour règlement anticipé',
+            mentionsLegales: '',
+            logo: ''
+          });
+
+          // ── NOUVEAU : Tiers (clients / fournisseurs) ────────────────────
+          const [tiers, setTiers] = useState([]);
+          const [tierSearch, setTierSearch] = useState('');
+          const [showTierForm, setShowTierForm] = useState(false);
+          const [editingTier, setEditingTier] = useState(null);
+          const tierFormVide = {
+            type: 'client', nom: '', siren: '', siret: '', tvaNum: '',
+            adresse: '', cp: '', ville: '', pays: 'France',
+            email: '', telephone: '', compteClient: '411000', compteFournisseur: '401000'
+          };
+          const [tierForm, setTierForm] = useState(tierFormVide);
+
+          // ── NOUVEAU : Facturation ───────────────────────────────────────
+          const [factures, setFactures] = useState([]);
+          const [factureView, setFactureView] = useState('list'); // 'list'|'create'|'detail'
+          const [factureActive, setFactureActive] = useState(null);
+          const [factureFiltre, setFactureFiltre] = useState('all');
+          const factureFormVide = {
+            type: 'facture', tierId: '', refFactureOrigin: '',
+            dateEmission: new Date().toISOString().split('T')[0],
+            dateLivraison: '', dateEcheance: '',
+            reference: '', notes: '',
+            lignes: [{ description: '', quantite: 1, prixUnitaire: '', tauxTva: 20, compte: '706000' }]
+          };
+          const [factureForm, setFactureForm] = useState(factureFormVide);
 
           // Sauvegarde automatique du brouillon toutes les 30 secondes
           useEffect(() => {
@@ -396,6 +439,16 @@
                 if (resBrouillons && resBrouillons.value) {
                   setBrouillons(JSON.parse(resBrouillons.value));
                 }
+
+                // ── NOUVEAU : chargement données commerciales ─────────────
+                const resParams = await window.storage.get(`${societe}_params_societe`);
+                if (resParams && resParams.value) setParamsSociete(JSON.parse(resParams.value));
+
+                const resTiers = await window.storage.get(`${societe}_tiers`);
+                if (resTiers && resTiers.value) setTiers(JSON.parse(resTiers.value));
+
+                const resFactures = await window.storage.get(`${societe}_factures`);
+                if (resFactures && resFactures.value) setFactures(JSON.parse(resFactures.value));
               } catch (e) {
                 console.log('Première utilisation');
               } finally {
@@ -429,6 +482,49 @@
             setNewSociete('');
           };
 
+          // ── Ouvrir le panneau d'édition complet d'une société ─────────
+          const ouvrirEditionSociete = async (id) => {
+            setLoadingEditSociete(true);
+            const vide = {
+              nom: societes[id],
+              raisonSociale: societes[id], formeJuridique: 'SARL', capital: '',
+              siren: '', siret: '', tvaNum: '', rcs: '',
+              adresse: '', cp: '', ville: '', pays: 'France',
+              email: '', telephone: '',
+              iban: '', bic: '', banque: '',
+              conditionsPaiement: '30 jours net',
+              penalitesRetard: "Triple du taux d'intérêt légal",
+              escompte: 'Aucun escompte pour règlement anticipé',
+              mentionsLegales: '', logo: ''
+            };
+            let form;
+            if (id === societeActive) {
+              form = { nom: societes[id], ...paramsSociete };
+            } else {
+              try {
+                const res = await window.storage.get(`${id}_params_societe`);
+                form = res && res.value ? { nom: societes[id], ...JSON.parse(res.value) } : { ...vide };
+              } catch { form = { ...vide }; }
+            }
+            setEditingSocieteForm(form);
+            setEditingSocieteId(id);
+            setLoadingEditSociete(false);
+          };
+
+          const sauvegarderEditionSociete = async () => {
+            if (!editingSocieteForm) return;
+            const { nom, ...params } = editingSocieteForm;
+            const nomFinal = (nom || '').trim() || params.raisonSociale || '';
+            if (!nomFinal) { alert('Le nom de la société est requis'); return; }
+            const newSocietes = { ...societes, [editingSocieteId]: nomFinal };
+            setSocietes(newSocietes);
+            await sauvegarderSocietes(newSocietes);
+            await window.storage.set(`${editingSocieteId}_params_societe`, JSON.stringify(params));
+            if (editingSocieteId === societeActive) setParamsSociete(params);
+            setEditingSocieteId(null);
+            setEditingSocieteForm(null);
+          };
+
           const supprimerSociete = async (id) => {
             if (Object.keys(societes).length <= 1) {
               alert('Vous devez conserver au moins une société');
@@ -442,6 +538,9 @@
             await window.storage.delete(`${id}_periode`);
             await window.storage.delete(`${id}_clotures`);
             await window.storage.delete(`${id}_brouillons`);
+            await window.storage.delete(`${id}_params_societe`);
+            await window.storage.delete(`${id}_tiers`);
+            await window.storage.delete(`${id}_factures`);
             
             const { [id]: removed, ...newSocietes } = societes;
             setSocietes(newSocietes);
@@ -470,6 +569,17 @@
 
           const sauvegarderClotures = async (nouvellesClotures) => {
             await window.storage.set(`${societeActive}_clotures`, JSON.stringify(nouvellesClotures));
+          };
+
+          // ── NOUVEAU : fonctions de sauvegarde commerciales ───────────────
+          const sauvegarderParamsSociete = async (p) => {
+            await window.storage.set(`${societeActive}_params_societe`, JSON.stringify(p));
+          };
+          const sauvegarderTiers = async (t) => {
+            await window.storage.set(`${societeActive}_tiers`, JSON.stringify(t));
+          };
+          const sauvegarderFactures = async (f) => {
+            await window.storage.set(`${societeActive}_factures`, JSON.stringify(f));
           };
 
           const sauvegarderBrouillons = async (nouveauxBrouillons) => {
@@ -668,6 +778,9 @@
             await window.storage.delete(`${societeActive}_periode`);
             await window.storage.delete(`${societeActive}_clotures`);
             await window.storage.delete(`${societeActive}_brouillons`);
+            await window.storage.delete(`${societeActive}_params_societe`);
+            await window.storage.delete(`${societeActive}_tiers`);
+            await window.storage.delete(`${societeActive}_factures`);
             
             setEcritures([]);
             setComptes(comptesDefaut);
@@ -675,6 +788,9 @@
             setPeriodeExercice({ debut: '', fin: '' });
             setClotures([]);
             setBrouillons([]);
+            setTiers([]);
+            setFactures([]);
+            setParamsSociete({ raisonSociale: '', formeJuridique: 'SARL', capital: '', siren: '', siret: '', tvaNum: '', rcs: '', adresse: '', cp: '', ville: '', pays: 'France', email: '', telephone: '', iban: '', bic: '', banque: '', conditionsPaiement: '30 jours net', penalitesRetard: "Triple du taux d'intérêt légal", escompte: 'Aucun escompte pour règlement anticipé', mentionsLegales: '', logo: '' });
             alert('Données réinitialisées');
           };
 
@@ -956,6 +1072,508 @@
                 };
               })
               .sort((a, b) => a.code.localeCompare(b.code));
+          };
+
+          // ══════════════════════════════════════════════════════════════
+          //  MODULE GESTION COMMERCIALE — FACTURATION ÉLECTRONIQUE
+          // ══════════════════════════════════════════════════════════════
+
+          // ── Calculs facture ───────────────────────────────────────────
+          const calculerTotauxFacture = (facture) => {
+            const lignes = facture.lignes || [];
+            let totalHT = 0;
+            const tvaMap = {};
+            lignes.forEach(l => {
+              const ht = (parseFloat(l.quantite) || 0) * (parseFloat(l.prixUnitaire) || 0);
+              totalHT += ht;
+              const taux = parseFloat(l.tauxTva) || 0;
+              if (!tvaMap[taux]) tvaMap[taux] = { taux, baseHT: 0, montantTva: 0 };
+              tvaMap[taux].baseHT += ht;
+              tvaMap[taux].montantTva += Math.round(ht * taux * 100) / 10000;
+            });
+            const tvaParTaux = Object.values(tvaMap).sort((a, b) => a.taux - b.taux);
+            const totalTVA = tvaParTaux.reduce((s, t) => s + t.montantTva, 0);
+            return { totalHT, totalTVA, totalTTC: totalHT + totalTVA, tvaParTaux };
+          };
+
+          const prochainNumeroFacture = (facturesRef) => {
+            const f = facturesRef || factures;
+            const annee = new Date().getFullYear();
+            const factsAnnee = f.filter(x => x.type === 'facture' && x.numero && x.numero.startsWith(`F-${annee}-`));
+            const max = factsAnnee.reduce((m, x) => { const n = parseInt((x.numero.split('-')[2]) || 0); return n > m ? n : m; }, 0);
+            return `F-${annee}-${String(max + 1).padStart(3, '0')}`;
+          };
+
+          const prochainNumeroAvoir = (facturesRef) => {
+            const f = facturesRef || factures;
+            const annee = new Date().getFullYear();
+            const avoirsAnnee = f.filter(x => x.type === 'avoir' && x.numero && x.numero.startsWith(`AV-${annee}-`));
+            const max = avoirsAnnee.reduce((m, x) => { const n = parseInt((x.numero.split('-')[2]) || 0); return n > m ? n : m; }, 0);
+            return `AV-${annee}-${String(max + 1).padStart(3, '0')}`;
+          };
+
+          const calculerEcheance = (dateEmission, condPaiement) => {
+            if (!dateEmission) return '';
+            const cond = condPaiement || paramsSociete.conditionsPaiement || '30 jours net';
+            let jours = 30;
+            const match = cond.match(/(\d+)\s*jours?/i);
+            if (match) jours = parseInt(match[1]);
+            const d = new Date(dateEmission); d.setDate(d.getDate() + jours);
+            return d.toISOString().split('T')[0];
+          };
+
+          // ── Gestion lignes facture ─────────────────────────────────────
+          const ajouterLigneFacture = () => {
+            setFactureForm(f => ({ ...f, lignes: [...f.lignes, { description: '', quantite: 1, prixUnitaire: '', tauxTva: 20, compte: '706000' }] }));
+          };
+          const supprimerLigneFacture = (idx) => {
+            if (factureForm.lignes.length <= 1) return;
+            setFactureForm(f => ({ ...f, lignes: f.lignes.filter((_, i) => i !== idx) }));
+          };
+          const modifierLigneFacture = (idx, champ, val) => {
+            setFactureForm(f => { const lignes = [...f.lignes]; lignes[idx] = { ...lignes[idx], [champ]: val }; return { ...f, lignes }; });
+          };
+
+          // ── Gestion tiers ─────────────────────────────────────────────
+          const ajouterTier = () => {
+            if (!tierForm.nom.trim()) { alert('Nom requis'); return; }
+            const id = 'tier_' + Date.now();
+            const nouveauxTiers = [...tiers, { id, ...tierForm }];
+            setTiers(nouveauxTiers);
+            sauvegarderTiers(nouveauxTiers);
+            setShowTierForm(false);
+            setTierForm(tierFormVide);
+          };
+          const modifierTierSave = () => {
+            if (!tierForm.nom.trim()) { alert('Nom requis'); return; }
+            const nouveauxTiers = tiers.map(t => t.id === editingTier ? { ...t, ...tierForm } : t);
+            setTiers(nouveauxTiers);
+            sauvegarderTiers(nouveauxTiers);
+            setEditingTier(null); setShowTierForm(false); setTierForm(tierFormVide);
+          };
+          const supprimerTier = (id) => {
+            if (!confirm('Supprimer ce tiers ?')) return;
+            const nouveauxTiers = tiers.filter(t => t.id !== id);
+            setTiers(nouveauxTiers);
+            sauvegarderTiers(nouveauxTiers);
+          };
+
+          // ── Comptabilisation automatique ───────────────────────────────
+          const comptabiliserFacture = async (facture, facturesActuelles) => {
+            const tier = tiers.find(t => t.id === facture.tierId);
+            const totaux = calculerTotauxFacture(facture);
+            const isAvoir = facture.type === 'avoir';
+            const compteClient = tier?.compteClient || '411000';
+            const lignesEcr = [];
+
+            // Vérifier/créer comptes TVA si besoin
+            const comptesTVADefaut = { '20': '44571', '10': '44572', '5.5': '44573', '2.1': '44574' };
+            const nomsTVADefaut = { '20': 'TVA collectée 20%', '10': 'TVA collectée 10%', '5.5': 'TVA collectée 5,5%', '2.1': 'TVA collectée 2,1%' };
+            let nouveauxComptes = { ...comptes };
+            let comptesModifies = false;
+            totaux.tvaParTaux.forEach(({ taux }) => {
+              const k = String(taux);
+              if (comptesTVADefaut[k] && !nouveauxComptes[comptesTVADefaut[k]]) {
+                nouveauxComptes[comptesTVADefaut[k]] = { nom: nomsTVADefaut[k] || `TVA ${taux}%`, type: 'Passif' };
+                comptesModifies = true;
+              }
+            });
+            if (comptesModifies) { setComptes(nouveauxComptes); await sauvegarderComptes(nouveauxComptes); }
+
+            if (!isAvoir) {
+              // Débit client TTC
+              lignesEcr.push({ compte: compteClient, libelle: `Facture ${facture.numero} - ${tier?.nom || ''}`, debit: totaux.totalTTC, credit: 0 });
+              // Crédit produits HT
+              const htParCompte = {};
+              facture.lignes.forEach(l => {
+                if (!l.description || !l.prixUnitaire) return;
+                const c = l.compte || '706000'; const ht = (parseFloat(l.quantite)||0)*(parseFloat(l.prixUnitaire)||0);
+                htParCompte[c] = (htParCompte[c] || 0) + ht;
+              });
+              Object.entries(htParCompte).forEach(([c, m]) => { if (m > 0) lignesEcr.push({ compte: c, libelle: `Facture ${facture.numero}`, debit: 0, credit: m }); });
+              // Crédit TVA
+              totaux.tvaParTaux.forEach(({ taux, montantTva }) => {
+                if (montantTva > 0) { const cTVA = comptesTVADefaut[String(taux)] || '444000'; lignesEcr.push({ compte: cTVA, libelle: `TVA ${taux}% - ${facture.numero}`, debit: 0, credit: montantTva }); }
+              });
+            } else {
+              // AVOIR : inverse
+              lignesEcr.push({ compte: compteClient, libelle: `Avoir ${facture.numero} - ${tier?.nom || ''}`, debit: 0, credit: totaux.totalTTC });
+              const htParCompte = {};
+              facture.lignes.forEach(l => {
+                if (!l.description || !l.prixUnitaire) return;
+                const c = l.compte || '706000'; const ht = (parseFloat(l.quantite)||0)*(parseFloat(l.prixUnitaire)||0);
+                htParCompte[c] = (htParCompte[c] || 0) + ht;
+              });
+              Object.entries(htParCompte).forEach(([c, m]) => { if (m > 0) lignesEcr.push({ compte: c, libelle: `Avoir ${facture.numero}`, debit: m, credit: 0 }); });
+              totaux.tvaParTaux.forEach(({ taux, montantTva }) => {
+                if (montantTva > 0) { const cTVA = comptesTVADefaut[String(taux)] || '444000'; lignesEcr.push({ compte: cTVA, libelle: `TVA ${taux}% - ${facture.numero}`, debit: montantTva, credit: 0 }); }
+              });
+            }
+
+            const ecritureId = Date.now();
+            const nouvelleEcriture = {
+              id: ecritureId, numero: `${isAvoir ? 'AV' : 'FAC'}-${facture.numero}`,
+              date: facture.dateEmission, journal: 'VE',
+              description: `${isAvoir ? 'Avoir' : 'Facture'} ${facture.numero} - ${tier?.nom || ''}`,
+              lignes: lignesEcr
+            };
+            const nouvellesEcritures = [...ecritures, nouvelleEcriture];
+            setEcritures(nouvellesEcritures);
+            await sauvegarderEcritures(nouvellesEcritures);
+            return ecritureId;
+          };
+
+          // ── Émission facture (nouvelle) ────────────────────────────────
+          const emettreNouvelleFacture = async () => {
+            if (!factureForm.tierId) { alert('Client requis'); return; }
+            if (!factureForm.lignes.some(l => l.description && l.prixUnitaire)) { alert('Au moins une ligne complète requise'); return; }
+            if (!confirm(`Émettre cette ${factureForm.type === 'avoir' ? "avoir" : "facture"} ?\n\nL'écriture comptable sera générée automatiquement.`)) return;
+            const numero = factureForm.type === 'facture' ? prochainNumeroFacture() : prochainNumeroAvoir();
+            const dateEmission = factureForm.dateEmission || new Date().toISOString().split('T')[0];
+            const dateEcheance = factureForm.dateEcheance || calculerEcheance(dateEmission);
+            const nouvelleFacture = { id: Date.now(), numero, ...factureForm, dateEmission, dateEcheance, statut: 'emise', dateCreation: new Date().toISOString() };
+            const ecritureId = await comptabiliserFacture(nouvelleFacture);
+            nouvelleFacture.ecritureId = ecritureId;
+            const nouvelles = [...factures, nouvelleFacture];
+            setFactures(nouvelles); await sauvegarderFactures(nouvelles);
+            setFactureActive(nouvelleFacture); setFactureView('detail'); setFactureForm(factureFormVide);
+            alert(`${factureForm.type === 'avoir' ? 'Avoir' : 'Facture'} ${numero} émis(e) ! Écriture comptable créée.`);
+          };
+
+          // ── Sauvegarder brouillon facture ──────────────────────────────
+          const sauvegarderBrouillonFacture = async () => {
+            if (!factureForm.tierId && !factureForm.lignes.some(l => l.description)) { alert('Ajoutez au minimum un client ou une ligne'); return; }
+            const numero = factureForm.type === 'facture' ? prochainNumeroFacture() : prochainNumeroAvoir();
+            const nouvelleFacture = { id: Date.now(), numero, ...factureForm, statut: 'brouillon', dateCreation: new Date().toISOString() };
+            const nouvelles = [...factures, nouvelleFacture];
+            setFactures(nouvelles); await sauvegarderFactures(nouvelles);
+            setFactureView('list'); setFactureForm(factureFormVide);
+            alert(`Brouillon ${numero} sauvegardé.`);
+          };
+
+          // ── Émettre brouillon existant ─────────────────────────────────
+          const emettreFactureExistante = async (factureId) => {
+            const facture = factures.find(f => f.id === factureId);
+            if (!facture || !confirm(`Émettre ${facture.numero} ?\n\nL'écriture comptable sera générée automatiquement.`)) return;
+            const ecritureId = await comptabiliserFacture(facture);
+            const nouvelles = factures.map(f => f.id === factureId ? { ...f, statut: 'emise', ecritureId } : f);
+            setFactures(nouvelles); await sauvegarderFactures(nouvelles);
+            setFactureActive(nouvelles.find(f => f.id === factureId));
+            alert(`Facture ${facture.numero} émise !`);
+          };
+
+          // ── Changer statut ─────────────────────────────────────────────
+          const changerStatutFacture = async (factureId, nouveauStatut) => {
+            const labels = { acceptee: 'acceptée', refusee: 'refusée', payee: 'payée', annulee: 'annulée' };
+            if (!confirm(`Marquer cette facture comme ${labels[nouveauStatut] || nouveauStatut} ?`)) return;
+            const nouvelles = factures.map(f => f.id === factureId ? { ...f, statut: nouveauStatut } : f);
+            setFactures(nouvelles); await sauvegarderFactures(nouvelles);
+            if (factureActive?.id === factureId) setFactureActive(nouvelles.find(f => f.id === factureId));
+          };
+
+          // ── Supprimer brouillon facture ────────────────────────────────
+          const supprimerFacture = async (factureId) => {
+            const f = factures.find(x => x.id === factureId);
+            if (f?.statut !== 'brouillon') { alert('Seuls les brouillons peuvent être supprimés.'); return; }
+            if (!confirm('Supprimer ce brouillon ?')) return;
+            const nouvelles = factures.filter(x => x.id !== factureId);
+            setFactures(nouvelles); await sauvegarderFactures(nouvelles);
+            if (factureActive?.id === factureId) { setFactureView('list'); setFactureActive(null); }
+          };
+
+          // ── Générer avoir ──────────────────────────────────────────────
+          const genererAvoir = async (factureOriginId) => {
+            const facOrig = factures.find(f => f.id === factureOriginId);
+            if (!facOrig || !confirm(`Générer un avoir pour ${facOrig.numero} ?`)) return;
+            const numero = prochainNumeroAvoir();
+            const avoir = {
+              id: Date.now(), numero, type: 'avoir',
+              refFactureOrigin: facOrig.numero, tierId: facOrig.tierId,
+              dateEmission: new Date().toISOString().split('T')[0],
+              dateEcheance: calculerEcheance(new Date().toISOString().split('T')[0]),
+              dateLivraison: facOrig.dateLivraison || '',
+              reference: `Avoir sur ${facOrig.numero}`, notes: facOrig.notes || '',
+              lignes: facOrig.lignes.map(l => ({ ...l })),
+              statut: 'emise', dateCreation: new Date().toISOString()
+            };
+            const ecritureId = await comptabiliserFacture(avoir);
+            avoir.ecritureId = ecritureId;
+            const nouvelles = [...factures, avoir];
+            setFactures(nouvelles); await sauvegarderFactures(nouvelles);
+            setFactureActive(avoir); setFactureView('detail');
+            alert(`Avoir ${numero} généré et émis.`);
+          };
+
+          // ── PDF Facture (conforme mentions légales françaises) ─────────
+          const genererPDFFacture = (facture) => {
+            const doc = new jsPDF();
+            const tier = tiers.find(t => t.id === facture.tierId);
+            const totaux = calculerTotauxFacture(facture);
+            const isAvoir = facture.type === 'avoir';
+            const MG = 15;
+            let y = 15;
+
+            // ── Logo de la société ─────────────────────────────────────────
+            if (paramsSociete.logo) {
+              try {
+                const logoSrc = paramsSociete.logo;
+                let fmt = 'JPEG';
+                if (logoSrc.includes('image/png'))  fmt = 'PNG';
+                else if (logoSrc.includes('image/gif')) fmt = 'GIF';
+                // Dimensionnement : max 45mm large, 22mm haut (aspect ratio préservé par jsPDF)
+                doc.addImage(logoSrc, fmt, MG, 8, 45, 22, '', 'FAST');
+                y = 34; // décaler le texte émetteur sous le logo
+              } catch (logoErr) {
+                console.warn('Logo PDF ignoré :', logoErr);
+              }
+            }
+
+            // Émetteur
+            doc.setFontSize(11); doc.setFont('helvetica', 'bold');
+            doc.text(paramsSociete.raisonSociale || societes[societeActive], MG, y);
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(8); y += 5;
+            if (paramsSociete.formeJuridique) { doc.text(`${paramsSociete.formeJuridique}${paramsSociete.capital ? ' — Capital : ' + paramsSociete.capital + ' €' : ''}`, MG, y); y += 4; }
+            if (paramsSociete.adresse) { doc.text(paramsSociete.adresse, MG, y); y += 4; }
+            if (paramsSociete.cp || paramsSociete.ville) { doc.text(`${paramsSociete.cp || ''} ${paramsSociete.ville || ''}`.trim(), MG, y); y += 4; }
+            if (paramsSociete.siren) { doc.text(`SIREN : ${paramsSociete.siren}${paramsSociete.siret ? ' — SIRET : ' + paramsSociete.siret : ''}`, MG, y); y += 4; }
+            if (paramsSociete.tvaNum) { doc.text(`N° TVA intracom. : ${paramsSociete.tvaNum}`, MG, y); y += 4; }
+            if (paramsSociete.rcs) { doc.text(`RCS : ${paramsSociete.rcs}`, MG, y); y += 4; }
+            if (paramsSociete.email) { doc.text(`${paramsSociete.email}${paramsSociete.telephone ? ' — Tél : ' + paramsSociete.telephone : ''}`, MG, y); y += 4; }
+
+            // Titre
+            doc.setFontSize(22); doc.setFont('helvetica', 'bold');
+            doc.setTextColor(isAvoir ? 180 : 41, isAvoir ? 50 : 98, isAvoir ? 50 : 178);
+            doc.text(isAvoir ? 'AVOIR' : 'FACTURE', 195, 22, { align: 'right' });
+            doc.setTextColor(0,0,0); doc.setFontSize(10);
+            doc.text(`N° ${facture.numero}`, 195, 30, { align: 'right' });
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+            doc.text(`Date d'émission : ${facture.dateEmission || ''}`, 195, 36, { align: 'right' });
+            if (facture.dateLivraison) doc.text(`Date de livraison/prestation : ${facture.dateLivraison}`, 195, 41, { align: 'right' });
+            if (facture.dateEcheance) { doc.setFont('helvetica', 'bold'); doc.text(`Échéance : ${facture.dateEcheance}`, 195, 46, { align: 'right' }); doc.setFont('helvetica', 'normal'); }
+            if (isAvoir && facture.refFactureOrigin) { doc.setTextColor(180,50,50); doc.text(`Avoir sur facture n° ${facture.refFactureOrigin}`, 195, 51, { align: 'right' }); doc.setTextColor(0,0,0); }
+
+            // Destinataire
+            y = Math.max(y + 2, 62);
+            doc.setFillColor(245, 247, 250); doc.rect(118, y - 4, 77, 38, 'F');
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+            doc.text('FACTURER À :', 120, y); y += 5;
+            if (tier) {
+              doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text(tier.nom, 120, y); y += 5;
+              doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+              if (tier.adresse) { doc.text(tier.adresse, 120, y); y += 4; }
+              if (tier.cp || tier.ville) { doc.text(`${tier.cp || ''} ${tier.ville || ''}`.trim(), 120, y); y += 4; }
+              if (tier.siren) { doc.text(`SIREN : ${tier.siren}`, 120, y); y += 4; }
+              if (tier.tvaNum) { doc.text(`N° TVA : ${tier.tvaNum}`, 120, y); y += 4; }
+            }
+
+            // Référence
+            y = Math.max(y, 110);
+            if (facture.reference) { doc.setFontSize(9); doc.text(`Réf. commande / bon de commande : ${facture.reference}`, MG, y); y += 6; }
+
+            // Table des lignes
+            doc.autoTable({
+              startY: y + 2,
+              columns: [
+                { header: 'Description', dataKey: 'desc' },
+                { header: 'Qté', dataKey: 'qte' },
+                { header: 'PU HT (€)', dataKey: 'pu' },
+                { header: 'TVA %', dataKey: 'tva' },
+                { header: 'Total HT (€)', dataKey: 'ht' }
+              ],
+              body: facture.lignes.filter(l => l.description || l.prixUnitaire).map(l => ({
+                desc: l.description || '',
+                qte: l.quantite || 1,
+                pu: parseFloat(l.prixUnitaire || 0).toFixed(2),
+                tva: `${l.tauxTva || 0} %`,
+                ht: ((parseFloat(l.quantite)||0) * (parseFloat(l.prixUnitaire)||0)).toFixed(2)
+              })),
+              theme: 'striped',
+              headStyles: { fillColor: isAvoir ? [180,50,50] : [41,98,178], textColor: 255, fontSize: 9, fontStyle: 'bold' },
+              bodyStyles: { fontSize: 9 },
+              columnStyles: { qte: { halign: 'right' }, pu: { halign: 'right' }, tva: { halign: 'right' }, ht: { halign: 'right' } },
+              margin: { left: MG, right: 15 }
+            });
+
+            y = doc.lastAutoTable.finalY + 6;
+
+            // Totaux
+            const xT = 128;
+            doc.setFontSize(9); doc.setFont('helvetica', 'normal');
+            doc.text('Total HT :', xT, y); doc.text(`${totaux.totalHT.toFixed(2)} €`, 195, y, { align: 'right' }); y += 5;
+            totaux.tvaParTaux.forEach(({ taux, baseHT, montantTva }) => {
+              doc.text(`TVA ${taux}% (base ${baseHT.toFixed(2)} €) :`, xT, y);
+              doc.text(`${montantTva.toFixed(2)} €`, 195, y, { align: 'right' }); y += 5;
+            });
+            doc.setFillColor(isAvoir ? 180 : 41, isAvoir ? 50 : 98, isAvoir ? 50 : 178);
+            doc.rect(xT - 2, y - 1, 67, 9, 'F');
+            doc.setTextColor(255,255,255); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+            doc.text('Total TTC :', xT, y + 6); doc.text(`${totaux.totalTTC.toFixed(2)} €`, 195, y + 6, { align: 'right' });
+            doc.setTextColor(0,0,0); y += 16;
+
+            // Coordonnées bancaires
+            if (paramsSociete.iban && !isAvoir) {
+              doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+              doc.text('Règlement par virement :', MG, y); y += 4;
+              doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+              doc.text(`IBAN : ${paramsSociete.iban}`, MG, y); y += 4;
+              if (paramsSociete.bic) { doc.text(`BIC : ${paramsSociete.bic}${paramsSociete.banque ? ' (' + paramsSociete.banque + ')' : ''}`, MG, y); y += 4; }
+            }
+
+            // Conditions
+            y += 2;
+            doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); doc.setTextColor(80,80,80);
+            doc.text(`Conditions de paiement : ${paramsSociete.conditionsPaiement || '30 jours net'}`, MG, y); y += 4;
+            doc.text(`Pénalités de retard (L.441-10 C.com.) : ${paramsSociete.penalitesRetard || "Triple du taux d'intérêt légal"}`, MG, y); y += 4;
+            doc.text(`Indemnité forfaitaire de recouvrement : 40 € (D.441-5 C.com.)`, MG, y); y += 4;
+            doc.text(`Escompte : ${paramsSociete.escompte || 'Aucun escompte pour règlement anticipé'}`, MG, y); y += 4;
+            if (facture.notes) { doc.setFont('helvetica', 'normal'); doc.text(`Notes : ${facture.notes}`, MG, y); y += 4; }
+
+            // Footer légal
+            doc.setDrawColor(200,200,200); doc.line(MG, 276, 195, 276);
+            doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(100,100,100);
+            const m = paramsSociete.mentionsLegales || `${paramsSociete.raisonSociale || societes[societeActive]}${paramsSociete.formeJuridique ? ' — ' + paramsSociete.formeJuridique : ''}${paramsSociete.capital ? ' au capital de ' + paramsSociete.capital + ' €' : ''} — SIRET ${paramsSociete.siret || '...'} — RCS ${paramsSociete.rcs || '...'} — N°TVA ${paramsSociete.tvaNum || '...'}`;
+            doc.text(doc.splitTextToSize(m, 180), MG, 279);
+            doc.setTextColor(80,80,180); doc.setFontSize(6);
+            doc.text('Document conforme Factur-X EN16931 — Fichier XML CII disponible via le bouton "XML Factur-X" de l\'application LucA', MG, 291);
+
+            doc.save(`${facture.numero}_${(tier?.nom || 'facture').replace(/[^a-z0-9]/gi,'_')}.pdf`);
+          };
+
+          // ── XML Factur-X (CII — EN16931) ──────────────────────────────
+          const genererXMLFacturX = (facture) => {
+            const tier = tiers.find(t => t.id === facture.tierId);
+            const totaux = calculerTotauxFacture(facture);
+            const isAvoir = facture.type === 'avoir';
+            const d = (s) => s ? s.replace(/-/g,'') : '';
+            const esc = (s) => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+            const lignesXML = facture.lignes.filter(l => l.description).map((l, i) => {
+              const ht = ((parseFloat(l.quantite)||0)*(parseFloat(l.prixUnitaire)||0)).toFixed(2);
+              const taux = parseFloat(l.tauxTva||0);
+              return `  <ram:IncludedSupplyChainTradeLineItem>
+    <ram:AssociatedDocumentLineDocument><ram:LineID>${i+1}</ram:LineID></ram:AssociatedDocumentLineDocument>
+    <ram:SpecifiedTradeProduct><ram:Name>${esc(l.description)}</ram:Name></ram:SpecifiedTradeProduct>
+    <ram:SpecifiedLineTradeAgreement>
+      <ram:NetPriceProductTradePrice><ram:ChargeAmount>${parseFloat(l.prixUnitaire||0).toFixed(4)}</ram:ChargeAmount></ram:NetPriceProductTradePrice>
+    </ram:SpecifiedLineTradeAgreement>
+    <ram:SpecifiedLineTradeDelivery><ram:BilledQuantity unitCode="C62">${parseFloat(l.quantite||1)}</ram:BilledQuantity></ram:SpecifiedLineTradeDelivery>
+    <ram:SpecifiedLineTradeSettlement>
+      <ram:ApplicableTradeTax>
+        <ram:TypeCode>VAT</ram:TypeCode>
+        <ram:CategoryCode>${taux === 0 ? 'Z' : 'S'}</ram:CategoryCode>
+        <ram:RateApplicablePercent>${taux}</ram:RateApplicablePercent>
+      </ram:ApplicableTradeTax>
+      <ram:SpecifiedTradeSettlementLineMonetarySummation><ram:LineTotalAmount>${ht}</ram:LineTotalAmount></ram:SpecifiedTradeSettlementLineMonetarySummation>
+    </ram:SpecifiedLineTradeSettlement>
+  </ram:IncludedSupplyChainTradeLineItem>`;
+            }).join('\n');
+
+            const tvaXML = totaux.tvaParTaux.map(({ taux, baseHT, montantTva }) =>
+              `  <ram:ApplicableTradeTax>
+    <ram:CalculatedAmount>${montantTva.toFixed(2)}</ram:CalculatedAmount>
+    <ram:TypeCode>VAT</ram:TypeCode>
+    <ram:BasisAmount>${baseHT.toFixed(2)}</ram:BasisAmount>
+    <ram:CategoryCode>${taux === 0 ? 'Z' : 'S'}</ram:CategoryCode>
+    <ram:RateApplicablePercent>${taux}</ram:RateApplicablePercent>
+  </ram:ApplicableTradeTax>`).join('\n');
+
+            const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<!-- Factur-X EN16931 — Généré par LucA — https://www.factur-x.eu -->
+<rsm:CrossIndustryInvoice
+  xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"
+  xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100"
+  xmlns:udt="urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100">
+
+  <rsm:ExchangedDocumentContext>
+    <ram:GuidelineSpecifiedDocumentContextParameter>
+      <ram:ID>urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:en16931</ram:ID>
+    </ram:GuidelineSpecifiedDocumentContextParameter>
+  </rsm:ExchangedDocumentContext>
+
+  <rsm:ExchangedDocument>
+    <ram:ID>${esc(facture.numero)}</ram:ID>
+    <ram:TypeCode>${isAvoir ? '381' : '380'}</ram:TypeCode>
+    <ram:IssueDateTime><udt:DateTimeString format="102">${d(facture.dateEmission)}</udt:DateTimeString></ram:IssueDateTime>
+    ${facture.notes ? `<ram:IncludedNote><ram:Content>${esc(facture.notes)}</ram:Content></ram:IncludedNote>` : ''}
+  </rsm:ExchangedDocument>
+
+  <rsm:SupplyChainTradeTransaction>
+${lignesXML}
+
+    <ram:ApplicableHeaderTradeAgreement>
+      <ram:SellerTradeParty>
+        <ram:Name>${esc(paramsSociete.raisonSociale || societes[societeActive])}</ram:Name>
+        ${paramsSociete.siren ? `<ram:SpecifiedLegalOrganization><ram:ID schemeID="0002">${esc(paramsSociete.siren)}</ram:ID></ram:SpecifiedLegalOrganization>` : ''}
+        <ram:PostalTradeAddress>
+          ${paramsSociete.cp ? `<ram:PostcodeCode>${esc(paramsSociete.cp)}</ram:PostcodeCode>` : ''}
+          ${paramsSociete.adresse ? `<ram:LineOne>${esc(paramsSociete.adresse)}</ram:LineOne>` : ''}
+          ${paramsSociete.ville ? `<ram:CityName>${esc(paramsSociete.ville)}</ram:CityName>` : ''}
+          <ram:CountryID>FR</ram:CountryID>
+        </ram:PostalTradeAddress>
+        ${paramsSociete.email ? `<ram:URIUniversalCommunication><ram:URIID schemeID="EM">${esc(paramsSociete.email)}</ram:URIID></ram:URIUniversalCommunication>` : ''}
+        ${paramsSociete.tvaNum ? `<ram:SpecifiedTaxRegistration><ram:ID schemeID="VA">${esc(paramsSociete.tvaNum)}</ram:ID></ram:SpecifiedTaxRegistration>` : ''}
+      </ram:SellerTradeParty>
+      <ram:BuyerTradeParty>
+        <ram:Name>${esc(tier?.nom || '')}</ram:Name>
+        ${tier?.siren ? `<ram:SpecifiedLegalOrganization><ram:ID schemeID="0002">${esc(tier.siren)}</ram:ID></ram:SpecifiedLegalOrganization>` : ''}
+        ${tier ? `<ram:PostalTradeAddress>
+          ${tier.cp ? `<ram:PostcodeCode>${esc(tier.cp)}</ram:PostcodeCode>` : ''}
+          ${tier.adresse ? `<ram:LineOne>${esc(tier.adresse)}</ram:LineOne>` : ''}
+          ${tier.ville ? `<ram:CityName>${esc(tier.ville)}</ram:CityName>` : ''}
+          <ram:CountryID>${esc(tier.pays === 'France' ? 'FR' : (tier.pays || 'FR'))}</ram:CountryID>
+        </ram:PostalTradeAddress>` : ''}
+        ${tier?.tvaNum ? `<ram:SpecifiedTaxRegistration><ram:ID schemeID="VA">${esc(tier.tvaNum)}</ram:ID></ram:SpecifiedTaxRegistration>` : ''}
+      </ram:BuyerTradeParty>
+      ${facture.reference ? `<ram:BuyerOrderReferencedDocument><ram:IssuerAssignedID>${esc(facture.reference)}</ram:IssuerAssignedID></ram:BuyerOrderReferencedDocument>` : ''}
+      ${isAvoir && facture.refFactureOrigin ? `<ram:InvoiceReferencedDocument><ram:IssuerAssignedID>${esc(facture.refFactureOrigin)}</ram:IssuerAssignedID></ram:InvoiceReferencedDocument>` : ''}
+    </ram:ApplicableHeaderTradeAgreement>
+
+    <ram:ApplicableHeaderTradeDelivery>
+      ${facture.dateLivraison ? `<ram:ActualDeliverySupplyChainEvent><ram:OccurrenceDateTime><udt:DateTimeString format="102">${d(facture.dateLivraison)}</udt:DateTimeString></ram:OccurrenceDateTime></ram:ActualDeliverySupplyChainEvent>` : ''}
+    </ram:ApplicableHeaderTradeDelivery>
+
+    <ram:ApplicableHeaderTradeSettlement>
+      ${paramsSociete.iban ? `<ram:SpecifiedTradeSettlementPaymentMeans>
+        <ram:TypeCode>58</ram:TypeCode>
+        <ram:PayeePartyCreditorFinancialAccount><ram:IBANID>${esc(paramsSociete.iban.replace(/\s/g,''))}</ram:IBANID></ram:PayeePartyCreditorFinancialAccount>
+        ${paramsSociete.bic ? `<ram:PayeeSpecifiedCreditorFinancialInstitution><ram:BICID>${esc(paramsSociete.bic)}</ram:BICID></ram:PayeeSpecifiedCreditorFinancialInstitution>` : ''}
+      </ram:SpecifiedTradeSettlementPaymentMeans>` : ''}
+      <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
+${tvaXML}
+      ${facture.dateEcheance ? `<ram:SpecifiedTradePaymentTerms>
+        <ram:DueDateDateTime><udt:DateTimeString format="102">${d(facture.dateEcheance)}</udt:DateTimeString></ram:DueDateDateTime>
+        <ram:Description>${esc(paramsSociete.conditionsPaiement || '')}</ram:Description>
+      </ram:SpecifiedTradePaymentTerms>` : ''}
+      <ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+        <ram:LineTotalAmount>${totaux.totalHT.toFixed(2)}</ram:LineTotalAmount>
+        <ram:TaxBasisTotalAmount>${totaux.totalHT.toFixed(2)}</ram:TaxBasisTotalAmount>
+        <ram:TaxTotalAmount currencyID="EUR">${totaux.totalTVA.toFixed(2)}</ram:TaxTotalAmount>
+        <ram:GrandTotalAmount>${totaux.totalTTC.toFixed(2)}</ram:GrandTotalAmount>
+        <ram:DuePayableAmount>${totaux.totalTTC.toFixed(2)}</ram:DuePayableAmount>
+      </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+    </ram:ApplicableHeaderTradeSettlement>
+  </rsm:SupplyChainTradeTransaction>
+</rsm:CrossIndustryInvoice>`;
+
+            const blob = new Blob([xml], { type: 'application/xml;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url;
+            a.download = `${facture.numero}_facturx.xml`; a.click();
+            URL.revokeObjectURL(url);
+          };
+
+          // ── Helpers UI ────────────────────────────────────────────────
+          const statutConfig = {
+            brouillon: { label: 'Brouillon', cls: 'bg-gray-600 text-gray-100' },
+            emise:     { label: 'Émise',     cls: 'bg-blue-600 text-white' },
+            acceptee:  { label: 'Acceptée',  cls: 'bg-green-600 text-white' },
+            refusee:   { label: 'Refusée',   cls: 'bg-orange-500 text-white' },
+            payee:     { label: 'Payée',     cls: 'bg-emerald-600 text-white' },
+            annulee:   { label: 'Annulée',   cls: 'bg-red-600 text-white' }
+          };
+          const StatutBadge = ({ statut }) => {
+            const c = statutConfig[statut] || { label: statut, cls: 'bg-gray-500 text-white' };
+            return <span className={`text-xs px-2 py-1 rounded-full font-semibold ${c.cls}`}>{c.label}</span>;
           };
 
           // Export PDF
@@ -1309,6 +1927,12 @@
                     <button onClick={() => setActiveView('situation')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${activeView === 'situation' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
                       <ChartBar /><span>Bilan & Résultat</span>
                     </button>
+                    <button onClick={() => { setActiveView('tiers'); setShowTierForm(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${activeView === 'tiers' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
+                      <span className="text-lg">👥</span><span>Tiers</span>
+                    </button>
+                    <button onClick={() => { setActiveView('facturation'); setFactureView('list'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${activeView === 'facturation' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
+                      <span className="text-lg">🧾</span><span>Facturation</span>
+                    </button>
                     <button onClick={() => setActiveView('plan')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${activeView === 'plan' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>
                       <Briefcase /><span>Plan Comptable</span>
                     </button>
@@ -1352,16 +1976,18 @@
                         {activeView === 'situation' && 'Bilan & Compte de résultat'}
                         {activeView === 'plan' && 'Plan comptable'}
                         {activeView === 'parametres' && 'Paramètres'}
+                        {activeView === 'tiers' && 'Tiers — Clients & Fournisseurs'}
+                        {activeView === 'facturation' && (factureView === 'create' ? 'Nouvelle facture' : factureView === 'detail' ? `Facture ${factureActive?.numero || ''}` : 'Facturation électronique')}
                       </h2>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      {activeView !== 'ecritures' && activeView !== 'plan' && activeView !== 'parametres' && (
+                      {activeView !== 'ecritures' && activeView !== 'plan' && activeView !== 'parametres' && activeView !== 'tiers' && activeView !== 'facturation' && (
                         <>
                           <input type="date" value={periodeDebut} onChange={(e) => setPeriodeDebut(e.target.value)} className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100" />
                           <input type="date" value={periodeFin} onChange={(e) => setPeriodeFin(e.target.value)} className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100" />
                         </>
                       )}
-                      {activeView !== 'parametres' && (
+                      {activeView !== 'parametres' && activeView !== 'tiers' && activeView !== 'facturation' && (
                         <>
                           <div className="relative group">
                             <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition">
@@ -1388,6 +2014,32 @@
                   {/* VUE PARAMETRES */}
                   {activeView === 'parametres' && (
                     <div className="space-y-6">
+
+                      {/* ── Identité de la société (facturation) ── */}
+                      <div className="bg-gray-800 rounded-lg border border-blue-700/50 p-6">
+                        <h3 className="text-lg font-semibold mb-1 text-blue-400">🏢 Identité de la société — Facturation</h3>
+                        <p className="text-xs text-gray-400 mb-4">
+                          Les informations d'identité, le logo et les paramètres de facturation sont désormais gérés dans <span className="text-blue-400 font-semibold">Gestion des Sociétés</span> — une seule base de données pour la comptabilité et la facturation.
+                        </p>
+                        <div className="bg-gray-700/50 border border-gray-600 rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
+                          <div className="flex items-center gap-4">
+                            {paramsSociete.logo && (
+                              <div className="bg-white rounded p-1 flex-shrink-0"><img src={paramsSociete.logo} alt="Logo" className="max-h-10 max-w-20 object-contain" /></div>
+                            )}
+                            <div>
+                              <p className="text-sm font-semibold text-gray-200">{paramsSociete.raisonSociale || societes[societeActive]}</p>
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {[paramsSociete.formeJuridique, paramsSociete.siret && `SIRET ${paramsSociete.siret}`, paramsSociete.tvaNum && `TVA ${paramsSociete.tvaNum}`].filter(Boolean).join(' — ') || 'Aucune information renseignée'}
+                              </p>
+                            </div>
+                          </div>
+                          <button onClick={() => ouvrirEditionSociete(societeActive)}
+                            className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-semibold transition flex-shrink-0">
+                            <Edit /> Modifier l'identité &amp; le logo
+                          </button>
+                        </div>
+                      </div>
+
                       {/* Gestion des sociétés */}
                       <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
                         <h3 className="text-lg font-semibold mb-4 text-blue-400">Gestion des Sociétés</h3>
@@ -1399,18 +2051,31 @@
                             </button>
                           </div>
                           <div className="space-y-2">
-                            {Object.entries(societes).map(([id, nom]) => (
-                              <div key={id} className="flex items-center justify-between bg-gray-700/50 p-3 rounded-lg">
-                                <div className="flex items-center gap-3">
-                                  <span className={`w-3 h-3 rounded-full ${id === societeActive ? 'bg-green-500' : 'bg-gray-600'}`}></span>
-                                  <span className="text-gray-200">{nom}</span>
-                                  {id === societeActive && <span className="text-xs text-green-400">(active)</span>}
+                            {Object.entries(societes).map(([id, nom]) => {
+                              const ps = id === societeActive ? paramsSociete : null;
+                              return (
+                                <div key={id} className="flex items-center justify-between bg-gray-700/50 p-3 rounded-lg">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <span className={`w-3 h-3 rounded-full flex-shrink-0 ${id === societeActive ? 'bg-green-500' : 'bg-gray-600'}`}></span>
+                                    {ps?.logo && (
+                                      <div className="bg-white rounded p-0.5 flex-shrink-0"><img src={ps.logo} alt="" className="max-h-6 max-w-12 object-contain block" /></div>
+                                    )}
+                                    <div className="min-w-0">
+                                      <span className="text-gray-200 font-medium">{nom}</span>
+                                      {id === societeActive && <span className="text-xs text-green-400 ml-2">(active)</span>}
+                                      {ps?.siret && <p className="text-xs text-gray-500 truncate">SIRET {ps.siret}</p>}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 ml-3 flex-shrink-0">
+                                    <button onClick={() => ouvrirEditionSociete(id)}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/40 border border-blue-600/40 rounded-lg text-blue-400 text-xs font-medium transition">
+                                      <Edit /> Modifier
+                                    </button>
+                                    <button onClick={() => supprimerSociete(id)} className="p-1.5 text-red-400 hover:text-red-300 transition" title="Supprimer"><Trash /></button>
+                                  </div>
                                 </div>
-                                <button onClick={() => supprimerSociete(id)} className="text-red-400 hover:text-red-300">
-                                  <Trash />
-                                </button>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       </div>
@@ -1969,6 +2634,667 @@
                     </div>
                   )}
 
+                  {/* ═══════════════════════════════════════════════════════
+                      VUE TIERS — Clients & Fournisseurs
+                  ═══════════════════════════════════════════════════════ */}
+                  {activeView === 'tiers' && (
+                    <div className="space-y-6">
+                      {/* Barre d'actions */}
+                      <div className="flex flex-wrap items-center gap-3">
+                        <input
+                          type="text" placeholder="🔍 Rechercher un tiers…" value={tierSearch}
+                          onChange={e => setTierSearch(e.target.value)}
+                          className="flex-1 min-w-48 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button onClick={() => { setShowTierForm(true); setEditingTier(null); setTierForm(tierFormVide); }}
+                          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-semibold">
+                          <Plus /> Nouveau tiers
+                        </button>
+                      </div>
+
+                      {/* Formulaire ajout / édition */}
+                      {showTierForm && (
+                        <div className="bg-gray-800 rounded-xl border border-blue-600/50 p-6">
+                          <h3 className="text-base font-semibold text-blue-400 mb-4">
+                            {editingTier ? '✏️ Modifier le tiers' : '➕ Nouveau tiers'}
+                          </h3>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            {/* Type */}
+                            <div>
+                              <label className="block text-xs font-medium text-gray-400 mb-1">Type *</label>
+                              <select value={tierForm.type} onChange={e => setTierForm(f => ({...f, type: e.target.value}))}
+                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="client">Client</option>
+                                <option value="fournisseur">Fournisseur</option>
+                                <option value="client-fournisseur">Client & Fournisseur</option>
+                              </select>
+                            </div>
+                            {/* Nom */}
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-medium text-gray-400 mb-1">Raison sociale / Nom *</label>
+                              <input type="text" value={tierForm.nom} onChange={e => setTierForm(f => ({...f, nom: e.target.value}))}
+                                placeholder="ACME SARL" className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            {/* SIREN */}
+                            <div>
+                              <label className="block text-xs font-medium text-gray-400 mb-1">SIREN (9 chiffres)</label>
+                              <input type="text" value={tierForm.siren} onChange={e => setTierForm(f => ({...f, siren: e.target.value}))} maxLength="9"
+                                placeholder="123456789" className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            {/* SIRET */}
+                            <div>
+                              <label className="block text-xs font-medium text-gray-400 mb-1">SIRET (14 chiffres)</label>
+                              <input type="text" value={tierForm.siret} onChange={e => setTierForm(f => ({...f, siret: e.target.value}))} maxLength="14"
+                                placeholder="12345678900012" className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            {/* TVA */}
+                            <div>
+                              <label className="block text-xs font-medium text-gray-400 mb-1">N° TVA intracommunautaire</label>
+                              <input type="text" value={tierForm.tvaNum} onChange={e => setTierForm(f => ({...f, tvaNum: e.target.value}))}
+                                placeholder="FR12345678901" className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            {/* Adresse */}
+                            <div className="md:col-span-2">
+                              <label className="block text-xs font-medium text-gray-400 mb-1">Adresse</label>
+                              <input type="text" value={tierForm.adresse} onChange={e => setTierForm(f => ({...f, adresse: e.target.value}))}
+                                placeholder="1 rue de la Paix" className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-400 mb-1">Code postal</label>
+                              <input type="text" value={tierForm.cp} onChange={e => setTierForm(f => ({...f, cp: e.target.value}))}
+                                placeholder="75001" className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-400 mb-1">Ville</label>
+                              <input type="text" value={tierForm.ville} onChange={e => setTierForm(f => ({...f, ville: e.target.value}))}
+                                placeholder="Paris" className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-400 mb-1">Pays</label>
+                              <input type="text" value={tierForm.pays} onChange={e => setTierForm(f => ({...f, pays: e.target.value}))}
+                                placeholder="France" className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-400 mb-1">Email</label>
+                              <input type="email" value={tierForm.email} onChange={e => setTierForm(f => ({...f, email: e.target.value}))}
+                                placeholder="contact@acme.fr" className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-400 mb-1">Téléphone</label>
+                              <input type="text" value={tierForm.telephone} onChange={e => setTierForm(f => ({...f, telephone: e.target.value}))}
+                                placeholder="01 23 45 67 89" className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-400 mb-1">Compte client (PCG)</label>
+                              <input type="text" value={tierForm.compteClient} onChange={e => setTierForm(f => ({...f, compteClient: e.target.value}))}
+                                placeholder="411000" className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                          </div>
+                          <div className="flex gap-3">
+                            <button onClick={editingTier ? modifierTierSave : ajouterTier}
+                              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-semibold flex items-center gap-2">
+                              <Check /> {editingTier ? 'Enregistrer les modifications' : 'Créer le tiers'}
+                            </button>
+                            <button onClick={() => { setShowTierForm(false); setEditingTier(null); setTierForm(tierFormVide); }}
+                              className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">Annuler</button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Liste des tiers */}
+                      <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+                        <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
+                          <span className="font-semibold text-gray-200">{tiers.length} tiers enregistré{tiers.length > 1 ? 's' : ''}</span>
+                        </div>
+                        {tiers.length === 0 ? (
+                          <div className="p-12 text-center text-gray-500">
+                            <div className="text-4xl mb-3">👥</div>
+                            <p>Aucun tiers. Cliquez sur «Nouveau tiers» pour commencer.</p>
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-gray-700">
+                            {tiers.filter(t => !tierSearch || t.nom.toLowerCase().includes(tierSearch.toLowerCase()) || (t.siren||'').includes(tierSearch)).map(t => (
+                              <div key={t.id} className="px-6 py-4 hover:bg-gray-700/30 transition flex items-start justify-between gap-4">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-3 mb-1 flex-wrap">
+                                    <span className="font-semibold text-gray-100">{t.nom}</span>
+                                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${t.type === 'client' ? 'bg-blue-900/60 text-blue-300' : t.type === 'fournisseur' ? 'bg-amber-900/60 text-amber-300' : 'bg-purple-900/60 text-purple-300'}`}>
+                                      {t.type === 'client' ? 'Client' : t.type === 'fournisseur' ? 'Fournisseur' : 'Client & Fourn.'}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
+                                    {t.siren && <span>SIREN : {t.siren}</span>}
+                                    {t.tvaNum && <span>TVA : {t.tvaNum}</span>}
+                                    {(t.cp || t.ville) && <span>{t.cp} {t.ville}</span>}
+                                    {t.email && <span>✉ {t.email}</span>}
+                                    {t.telephone && <span>☎ {t.telephone}</span>}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {(t.type === 'client' || t.type === 'client-fournisseur') && (
+                                    <button onClick={() => { setActiveView('facturation'); setFactureView('create'); setFactureForm({...factureFormVide, tierId: t.id}); }}
+                                      className="px-3 py-1.5 bg-green-700 hover:bg-green-600 rounded-lg text-xs font-semibold">
+                                      📄 Facturer
+                                    </button>
+                                  )}
+                                  <button onClick={() => { setEditingTier(t.id); setTierForm({...t}); setShowTierForm(true); }}
+                                    className="p-2 text-blue-400 hover:text-blue-300"><Edit /></button>
+                                  <button onClick={() => supprimerTier(t.id)} className="p-2 text-red-400 hover:text-red-300"><Trash /></button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ═══════════════════════════════════════════════════════
+                      VUE FACTURATION — Module complet
+                  ═══════════════════════════════════════════════════════ */}
+                  {activeView === 'facturation' && (
+                    <div className="space-y-6">
+
+                      {/* ── Vérification paramètres société ── */}
+                      {(!paramsSociete.raisonSociale || !paramsSociete.siren) && (
+                        <div className="bg-amber-900/30 border border-amber-600 rounded-xl p-4 flex items-start gap-3">
+                          <span className="text-xl">⚠️</span>
+                          <div>
+                            <p className="text-amber-300 font-semibold text-sm">Paramètres société incomplets</p>
+                            <p className="text-amber-400/80 text-xs mt-1">Renseignez au minimum la Raison sociale et le SIREN dans <button onClick={() => setActiveView('parametres')} className="underline text-amber-300">Paramètres</button> pour émettre des factures conformes.</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ── Dashboard KPIs ── */}
+                      {factureView === 'list' && (() => {
+                        const facturesEmises = factures.filter(f => f.statut !== 'brouillon' && f.type === 'facture');
+                        const totalCA = facturesEmises.reduce((s, f) => s + calculerTotauxFacture(f).totalHT, 0);
+                        const totalTTC = facturesEmises.reduce((s, f) => s + calculerTotauxFacture(f).totalTTC, 0);
+                        const totalImpayes = factures.filter(f => f.type === 'facture' && (f.statut === 'emise' || f.statut === 'acceptee')).reduce((s, f) => s + calculerTotauxFacture(f).totalTTC, 0);
+                        const nbImpayees = factures.filter(f => f.type === 'facture' && (f.statut === 'emise' || f.statut === 'acceptee')).length;
+                        const today = new Date().toISOString().split('T')[0];
+                        const nbEnRetard = factures.filter(f => f.type === 'facture' && (f.statut === 'emise' || f.statut === 'acceptee') && f.dateEcheance && f.dateEcheance < today).length;
+                        return (
+                          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                            {[
+                              { label: 'CA HT total', val: `${totalCA.toFixed(2)} €`, sub: `TTC : ${totalTTC.toFixed(2)} €`, cls: 'border-blue-600/40', icon: '📊' },
+                              { label: 'Factures émises', val: facturesEmises.length, sub: `dont ${factures.filter(f=>f.statut==='payee').length} payée(s)`, cls: 'border-green-600/40', icon: '📄' },
+                              { label: 'Encours TTC', val: `${totalImpayes.toFixed(2)} €`, sub: `${nbImpayees} facture(s) en attente`, cls: 'border-amber-600/40', icon: '⏳' },
+                              { label: 'En retard', val: nbEnRetard, sub: nbEnRetard > 0 ? 'Relances à lancer' : 'Tout est à jour ✓', cls: nbEnRetard > 0 ? 'border-red-600/40' : 'border-gray-600/40', icon: nbEnRetard > 0 ? '🔴' : '✅' },
+                            ].map((k, i) => (
+                              <div key={i} className={`bg-gray-800 border rounded-xl p-4 ${k.cls}`}>
+                                <div className="flex items-center gap-2 mb-2"><span className="text-xl">{k.icon}</span><span className="text-xs text-gray-400">{k.label}</span></div>
+                                <div className="text-xl font-bold text-gray-100">{k.val}</div>
+                                <div className="text-xs text-gray-500 mt-1">{k.sub}</div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+
+                      {/* ── Vue LISTE ── */}
+                      {factureView === 'list' && (
+                        <div className="bg-gray-800 rounded-xl border border-gray-700">
+                          <div className="px-6 py-4 border-b border-gray-700 flex flex-wrap items-center gap-3">
+                            <div className="flex gap-2 flex-wrap">
+                              {['all','brouillon','emise','acceptee','payee','annulee','avoir'].map(s => (
+                                <button key={s} onClick={() => setFactureFiltre(s)}
+                                  className={`px-3 py-1 rounded-full text-xs font-semibold transition ${factureFiltre === s ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>
+                                  {s === 'all' ? 'Toutes' : s === 'avoir' ? 'Avoirs' : (statutConfig[s]?.label || s)}
+                                  {' '}({s === 'all' ? factures.length : factures.filter(f => s === 'avoir' ? f.type === 'avoir' : f.statut === s && f.type === 'facture').length})
+                                </button>
+                              ))}
+                            </div>
+                            <div className="ml-auto">
+                              <button onClick={() => { setFactureView('create'); setFactureForm(factureFormVide); }}
+                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-semibold">
+                                <Plus /> Nouvelle facture
+                              </button>
+                            </div>
+                          </div>
+
+                          {factures.length === 0 ? (
+                            <div className="p-12 text-center text-gray-500">
+                              <div className="text-5xl mb-4">📋</div>
+                              <p className="text-lg font-semibold mb-2">Aucune facture</p>
+                              <p className="text-sm">Créez votre première facture pour commencer.</p>
+                            </div>
+                          ) : (
+                            <div className="divide-y divide-gray-700/60">
+                              {factures.filter(f => {
+                                if (factureFiltre === 'all') return true;
+                                if (factureFiltre === 'avoir') return f.type === 'avoir';
+                                return f.statut === factureFiltre && f.type === 'facture';
+                              }).slice().reverse().map(f => {
+                                const tier = tiers.find(t => t.id === f.tierId);
+                                const totaux = calculerTotauxFacture(f);
+                                const today = new Date().toISOString().split('T')[0];
+                                const enRetard = f.dateEcheance && f.dateEcheance < today && (f.statut === 'emise' || f.statut === 'acceptee');
+                                return (
+                                  <div key={f.id} className={`px-6 py-4 hover:bg-gray-700/30 transition cursor-pointer ${enRetard ? 'border-l-4 border-red-500' : ''}`}
+                                    onClick={() => { setFactureActive(f); setFactureView('detail'); }}>
+                                    <div className="flex items-start justify-between gap-4">
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-3 mb-1 flex-wrap">
+                                          <span className="font-mono font-bold text-gray-200">{f.numero}</span>
+                                          <StatutBadge statut={f.statut} />
+                                          {f.type === 'avoir' && <span className="text-xs bg-red-900/50 text-red-300 px-2 py-0.5 rounded-full">AVOIR</span>}
+                                          {enRetard && <span className="text-xs bg-red-600 text-white px-2 py-0.5 rounded-full animate-pulse">⚠ EN RETARD</span>}
+                                        </div>
+                                        <div className="text-sm text-gray-300 font-semibold">{tier?.nom || <span className="text-gray-500 italic">Client supprimé</span>}</div>
+                                        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500 mt-1">
+                                          <span>Émis le {f.dateEmission}</span>
+                                          {f.dateEcheance && <span className={enRetard ? 'text-red-400 font-semibold' : ''}>Échéance {f.dateEcheance}</span>}
+                                          {f.reference && <span>Réf : {f.reference}</span>}
+                                        </div>
+                                      </div>
+                                      <div className="text-right shrink-0">
+                                        <div className="font-bold text-gray-100">{totaux.totalTTC.toFixed(2)} €</div>
+                                        <div className="text-xs text-gray-500">HT {totaux.totalHT.toFixed(2)} €</div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* ── Vue CRÉATION ── */}
+                      {factureView === 'create' && (() => {
+                        const totaux = calculerTotauxFacture(factureForm);
+                        return (
+                          <div className="space-y-5">
+                            <div className="flex items-center gap-4 mb-2">
+                              <button onClick={() => { setFactureView('list'); setFactureForm(factureFormVide); }}
+                                className="text-gray-400 hover:text-gray-200 text-sm flex items-center gap-1">← Retour à la liste</button>
+                              <h3 className="text-lg font-semibold text-gray-200">
+                                {factureForm.type === 'avoir' ? '📝 Nouvel avoir' : '📄 Nouvelle facture'}
+                              </h3>
+                            </div>
+
+                            {/* Type + Tiers + Dates */}
+                            <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
+                              <h4 className="text-sm font-semibold text-gray-300 mb-4">Informations générales</h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-400 mb-1">Type de document *</label>
+                                  <select value={factureForm.type} onChange={e => setFactureForm(f => ({...f, type: e.target.value}))}
+                                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="facture">Facture</option>
+                                    <option value="avoir">Avoir / Note de crédit</option>
+                                  </select>
+                                </div>
+                                <div className="lg:col-span-2">
+                                  <label className="block text-xs font-medium text-gray-400 mb-1">Client *</label>
+                                  <select value={factureForm.tierId} onChange={e => setFactureForm(f => ({...f, tierId: e.target.value}))}
+                                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">— Sélectionner un client —</option>
+                                    {tiers.filter(t => t.type === 'client' || t.type === 'client-fournisseur').map(t => (
+                                      <option key={t.id} value={t.id}>{t.nom}{t.siren ? ` (${t.siren})` : ''}</option>
+                                    ))}
+                                  </select>
+                                  {tiers.filter(t => t.type === 'client' || t.type === 'client-fournisseur').length === 0 && (
+                                    <p className="text-xs text-amber-400 mt-1">⚠ Aucun client. <button onClick={() => { setActiveView('tiers'); setShowTierForm(true); }} className="underline">Créer un client</button></p>
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-400 mb-1">Date d'émission *</label>
+                                  <input type="date" value={factureForm.dateEmission}
+                                    onChange={e => setFactureForm(f => ({...f, dateEmission: e.target.value, dateEcheance: calculerEcheance(e.target.value)}))}
+                                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-400 mb-1">Date de livraison / prestation</label>
+                                  <input type="date" value={factureForm.dateLivraison} onChange={e => setFactureForm(f => ({...f, dateLivraison: e.target.value}))}
+                                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-400 mb-1">Date d'échéance</label>
+                                  <input type="date" value={factureForm.dateEcheance} onChange={e => setFactureForm(f => ({...f, dateEcheance: e.target.value}))}
+                                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-400 mb-1">Référence / Bon de commande</label>
+                                  <input type="text" value={factureForm.reference} onChange={e => setFactureForm(f => ({...f, reference: e.target.value}))}
+                                    placeholder="BC-2024-001" className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                </div>
+                                {factureForm.type === 'avoir' && (
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-400 mb-1">N° facture d'origine</label>
+                                    <input type="text" value={factureForm.refFactureOrigin} onChange={e => setFactureForm(f => ({...f, refFactureOrigin: e.target.value}))}
+                                      placeholder="F-2024-001" className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Lignes */}
+                            <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
+                              <div className="flex items-center justify-between mb-4">
+                                <h4 className="text-sm font-semibold text-gray-300">Lignes de facturation</h4>
+                                <button onClick={ajouterLigneFacture}
+                                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-semibold">
+                                  <Plus /> Ajouter une ligne
+                                </button>
+                              </div>
+                              <div className="space-y-3">
+                                {/* Header */}
+                                <div className="hidden md:grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 pb-2 border-b border-gray-700">
+                                  <div className="col-span-4">Description</div>
+                                  <div className="col-span-1 text-right">Qté</div>
+                                  <div className="col-span-2 text-right">PU HT (€)</div>
+                                  <div className="col-span-1 text-right">TVA %</div>
+                                  <div className="col-span-2">Compte PCG</div>
+                                  <div className="col-span-1 text-right">Total HT</div>
+                                  <div className="col-span-1"></div>
+                                </div>
+                                {factureForm.lignes.map((ligne, idx) => {
+                                  const ht = (parseFloat(ligne.quantite)||0) * (parseFloat(ligne.prixUnitaire)||0);
+                                  return (
+                                    <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                                      <div className="col-span-12 md:col-span-4">
+                                        <input type="text" value={ligne.description} onChange={e => modifierLigneFacture(idx, 'description', e.target.value)}
+                                          placeholder="Description de la prestation / produit"
+                                          className="w-full px-2 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                                      </div>
+                                      <div className="col-span-4 md:col-span-1">
+                                        <input type="number" value={ligne.quantite} onChange={e => modifierLigneFacture(idx, 'quantite', e.target.value)} min="0" step="0.001"
+                                          className="w-full px-2 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 text-right focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                                      </div>
+                                      <div className="col-span-4 md:col-span-2">
+                                        <input type="number" value={ligne.prixUnitaire} onChange={e => modifierLigneFacture(idx, 'prixUnitaire', e.target.value)} min="0" step="0.01" placeholder="0.00"
+                                          className="w-full px-2 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 text-right focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                                      </div>
+                                      <div className="col-span-4 md:col-span-1">
+                                        <select value={ligne.tauxTva} onChange={e => modifierLigneFacture(idx, 'tauxTva', parseFloat(e.target.value))}
+                                          className="w-full px-2 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                          <option value={20}>20%</option>
+                                          <option value={10}>10%</option>
+                                          <option value={5.5}>5,5%</option>
+                                          <option value={2.1}>2,1%</option>
+                                          <option value={0}>0%</option>
+                                        </select>
+                                      </div>
+                                      <div className="col-span-6 md:col-span-2">
+                                        <select value={ligne.compte} onChange={e => modifierLigneFacture(idx, 'compte', e.target.value)}
+                                          className="w-full px-2 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                          {Object.entries(comptes).filter(([_, c]) => c.type === 'Produit').sort((a,b) => a[0].localeCompare(b[0])).map(([code, c]) => (
+                                            <option key={code} value={code}>{code} – {c.nom}</option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                      <div className="col-span-4 md:col-span-1 text-right font-mono text-sm font-semibold text-gray-200">
+                                        {ht.toFixed(2)}
+                                      </div>
+                                      <div className="col-span-2 md:col-span-1 flex justify-end">
+                                        {factureForm.lignes.length > 1 && (
+                                          <button onClick={() => supprimerLigneFacture(idx)} className="p-1 text-red-400 hover:text-red-300"><Trash /></button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Totaux */}
+                              <div className="mt-6 pt-4 border-t border-gray-700 flex justify-end">
+                                <div className="w-72 space-y-2">
+                                  <div className="flex justify-between text-sm text-gray-400">
+                                    <span>Total HT</span>
+                                    <span className="font-mono">{totaux.totalHT.toFixed(2)} €</span>
+                                  </div>
+                                  {totaux.tvaParTaux.map(({ taux, baseHT, montantTva }) => (
+                                    <div key={taux} className="flex justify-between text-sm text-gray-400">
+                                      <span>TVA {taux}% (base {baseHT.toFixed(2)} €)</span>
+                                      <span className="font-mono">{montantTva.toFixed(2)} €</span>
+                                    </div>
+                                  ))}
+                                  <div className="flex justify-between text-base font-bold text-gray-100 pt-2 border-t border-gray-600">
+                                    <span>Total TTC</span>
+                                    <span className="font-mono text-blue-400">{totaux.totalTTC.toFixed(2)} €</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Notes */}
+                            <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
+                              <label className="block text-xs font-medium text-gray-400 mb-1">Notes / mentions complémentaires</label>
+                              <textarea rows="3" value={factureForm.notes} onChange={e => setFactureForm(f => ({...f, notes: e.target.value}))}
+                                placeholder="Informations complémentaires, conditions particulières…"
+                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+
+                            {/* Conformité Factur-X */}
+                            <div className="bg-blue-900/20 border border-blue-700/40 rounded-xl p-4 text-xs text-blue-300/80 space-y-1">
+                              <p className="font-semibold text-blue-300">🔒 Conformité Facturation Électronique (Ordonnance 2021-1190 / Décret 2022-1299)</p>
+                              <p>✓ Numérotation séquentielle automatique — ✓ Mentions légales obligatoires (Art. 242 nonies A Annexe II CGI) — ✓ XML Factur-X EN16931 (profil COMFORT)</p>
+                              <p>✓ Pénalités de retard L.441-10 C.com — ✓ Indemnité forfaitaire 40€ D.441-5 C.com — ✓ Comptabilisation automatique (411/70x/445)</p>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex flex-wrap gap-3">
+                              <button onClick={emettreNouvelleFacture}
+                                className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-xl font-semibold text-sm">
+                                🚀 Émettre {factureForm.type === 'avoir' ? "l'avoir" : 'la facture'} + comptabiliser
+                              </button>
+                              <button onClick={sauvegarderBrouillonFacture}
+                                className="px-5 py-3 bg-gray-700 hover:bg-gray-600 rounded-xl text-sm font-semibold flex items-center gap-2">
+                                <Save /> Brouillon
+                              </button>
+                              <button onClick={() => { setFactureView('list'); setFactureForm(factureFormVide); }}
+                                className="px-5 py-3 bg-gray-700 hover:bg-gray-600 rounded-xl text-sm">Annuler</button>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* ── Vue DÉTAIL facture ── */}
+                      {factureView === 'detail' && factureActive && (() => {
+                        const tier = tiers.find(t => t.id === factureActive.tierId);
+                        const totaux = calculerTotauxFacture(factureActive);
+                        const isAvoir = factureActive.type === 'avoir';
+                        const today = new Date().toISOString().split('T')[0];
+                        const enRetard = factureActive.dateEcheance && factureActive.dateEcheance < today && (factureActive.statut === 'emise' || factureActive.statut === 'acceptee');
+                        return (
+                          <div className="space-y-5">
+                            {/* Navigation */}
+                            <div className="flex items-center justify-between flex-wrap gap-3">
+                              <button onClick={() => { setFactureView('list'); setFactureActive(null); }}
+                                className="text-gray-400 hover:text-gray-200 text-sm flex items-center gap-1">← Retour à la liste</button>
+                              <div className="flex flex-wrap gap-2">
+                                <button onClick={() => genererPDFFacture(factureActive)}
+                                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-semibold">
+                                  <Download /> PDF
+                                </button>
+                                <button onClick={() => genererXMLFacturX(factureActive)}
+                                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-sm font-semibold">
+                                  <Download /> XML Factur-X
+                                </button>
+                                {!isAvoir && factureActive.statut === 'emise' && (
+                                  <button onClick={() => genererAvoir(factureActive.id)}
+                                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 rounded-lg text-sm font-semibold">
+                                    ↩ Générer un avoir
+                                  </button>
+                                )}
+                                {factureActive.statut === 'brouillon' && (
+                                  <>
+                                    <button onClick={() => emettreFactureExistante(factureActive.id)}
+                                      className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-semibold">🚀 Émettre</button>
+                                    <button onClick={() => supprimerFacture(factureActive.id)}
+                                      className="px-4 py-2 bg-red-700 hover:bg-red-600 rounded-lg text-sm font-semibold">🗑 Supprimer</button>
+                                  </>
+                                )}
+                                {(factureActive.statut === 'emise' || factureActive.statut === 'acceptee') && (
+                                  <button onClick={() => changerStatutFacture(factureActive.id, 'payee')}
+                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-semibold">✓ Marquer payée</button>
+                                )}
+                                {factureActive.statut === 'emise' && (
+                                  <button onClick={() => changerStatutFacture(factureActive.id, 'annulee')}
+                                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg text-sm">Annuler</button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Alerte retard */}
+                            {enRetard && (
+                              <div className="bg-red-900/40 border border-red-600 rounded-xl p-4 flex items-center gap-3">
+                                <span className="text-2xl">🔴</span>
+                                <div>
+                                  <p className="text-red-300 font-semibold">Facture en retard de paiement</p>
+                                  <p className="text-red-400/80 text-xs mt-0.5">Échéance dépassée le {factureActive.dateEcheance}. Des pénalités de retard ({paramsSociete.penalitesRetard || 'triple taux BCE'}) + indemnité forfaitaire 40 € sont applicables.</p>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Carte facture */}
+                            <div className={`bg-gray-800 rounded-xl border-2 ${isAvoir ? 'border-red-700/50' : 'border-gray-700'} overflow-hidden`}>
+                              {/* En-tête */}
+                              <div className={`px-8 py-6 ${isAvoir ? 'bg-red-900/20' : 'bg-gray-700/30'} flex justify-between items-start flex-wrap gap-6`}>
+                                {/* Émetteur + Logo */}
+                                <div className="flex items-start gap-4">
+                                  {paramsSociete.logo && (
+                                    <div className="flex-shrink-0 bg-white rounded-lg p-1.5" style={{maxWidth:'120px'}}>
+                                      <img src={paramsSociete.logo} alt="Logo" className="max-h-16 max-w-full object-contain block" />
+                                    </div>
+                                  )}
+                                  <div className="space-y-0.5 text-sm">
+                                    <p className="font-bold text-gray-100 text-base">{paramsSociete.raisonSociale || societes[societeActive]}</p>
+                                    {paramsSociete.formeJuridique && <p className="text-gray-400 text-xs">{paramsSociete.formeJuridique}{paramsSociete.capital ? ` — Capital ${paramsSociete.capital} €` : ''}</p>}
+                                    {paramsSociete.adresse && <p className="text-gray-400 text-xs">{paramsSociete.adresse}</p>}
+                                    {(paramsSociete.cp || paramsSociete.ville) && <p className="text-gray-400 text-xs">{paramsSociete.cp} {paramsSociete.ville}</p>}
+                                    {paramsSociete.siren && <p className="text-gray-400 text-xs">SIREN : {paramsSociete.siren}{paramsSociete.siret ? ` — SIRET : ${paramsSociete.siret}` : ''}</p>}
+                                    {paramsSociete.tvaNum && <p className="text-gray-400 text-xs">N° TVA : {paramsSociete.tvaNum}</p>}
+                                    {paramsSociete.rcs && <p className="text-gray-400 text-xs">RCS : {paramsSociete.rcs}</p>}
+                                  </div>
+                                </div>
+                                {/* Numéro + dates */}
+                                <div className="text-right space-y-1">
+                                  <div className={`text-3xl font-black ${isAvoir ? 'text-red-400' : 'text-blue-400'}`}>{isAvoir ? 'AVOIR' : 'FACTURE'}</div>
+                                  <div className="text-xl font-bold text-gray-100">{factureActive.numero}</div>
+                                  <StatutBadge statut={factureActive.statut} />
+                                  <div className="text-xs text-gray-400 space-y-0.5 mt-2">
+                                    <p>Émis le : <span className="text-gray-200">{factureActive.dateEmission}</span></p>
+                                    {factureActive.dateLivraison && <p>Prestation : <span className="text-gray-200">{factureActive.dateLivraison}</span></p>}
+                                    {factureActive.dateEcheance && <p className={enRetard ? 'text-red-400 font-bold' : ''}>Échéance : <span>{factureActive.dateEcheance}</span></p>}
+                                    {isAvoir && factureActive.refFactureOrigin && <p className="text-red-300">Avoir sur : {factureActive.refFactureOrigin}</p>}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Client */}
+                              <div className="px-8 py-4 border-t border-gray-700/50 flex gap-10 flex-wrap">
+                                <div>
+                                  <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Facturé à</p>
+                                  {tier ? (
+                                    <div className="text-sm space-y-0.5">
+                                      <p className="font-bold text-gray-100">{tier.nom}</p>
+                                      {tier.adresse && <p className="text-gray-400">{tier.adresse}</p>}
+                                      {(tier.cp || tier.ville) && <p className="text-gray-400">{tier.cp} {tier.ville}</p>}
+                                      {tier.siren && <p className="text-gray-400">SIREN : {tier.siren}</p>}
+                                      {tier.tvaNum && <p className="text-gray-400">N° TVA : {tier.tvaNum}</p>}
+                                    </div>
+                                  ) : <p className="text-gray-500 italic text-sm">Client supprimé</p>}
+                                </div>
+                                {factureActive.reference && (
+                                  <div>
+                                    <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Référence commande</p>
+                                    <p className="text-sm font-mono text-gray-200">{factureActive.reference}</p>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Tableau lignes */}
+                              <div className="px-8 py-4 border-t border-gray-700/50 overflow-x-auto">
+                                <table className="w-full text-sm">
+                                  <thead>
+                                    <tr className={`${isAvoir ? 'bg-red-900/30' : 'bg-blue-900/30'} rounded`}>
+                                      <th className="text-left px-3 py-2 text-xs font-semibold text-gray-400 rounded-l">Description</th>
+                                      <th className="text-right px-3 py-2 text-xs font-semibold text-gray-400">Qté</th>
+                                      <th className="text-right px-3 py-2 text-xs font-semibold text-gray-400">PU HT</th>
+                                      <th className="text-right px-3 py-2 text-xs font-semibold text-gray-400">TVA</th>
+                                      <th className="text-right px-3 py-2 text-xs font-semibold text-gray-400 rounded-r">Total HT</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-gray-700/40">
+                                    {factureActive.lignes.filter(l => l.description || l.prixUnitaire).map((l, i) => {
+                                      const ht = (parseFloat(l.quantite)||0)*(parseFloat(l.prixUnitaire)||0);
+                                      return (
+                                        <tr key={i} className="hover:bg-gray-700/20">
+                                          <td className="px-3 py-2.5 text-gray-200">{l.description}</td>
+                                          <td className="px-3 py-2.5 text-right text-gray-300 font-mono">{l.quantite}</td>
+                                          <td className="px-3 py-2.5 text-right text-gray-300 font-mono">{parseFloat(l.prixUnitaire||0).toFixed(2)} €</td>
+                                          <td className="px-3 py-2.5 text-right text-gray-400 font-mono">{l.tauxTva}%</td>
+                                          <td className="px-3 py-2.5 text-right text-gray-200 font-mono font-semibold">{ht.toFixed(2)} €</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {/* Totaux */}
+                              <div className="px-8 py-4 border-t border-gray-700/50 flex justify-end">
+                                <div className="w-72 space-y-2">
+                                  <div className="flex justify-between text-sm text-gray-400">
+                                    <span>Total HT</span><span className="font-mono">{totaux.totalHT.toFixed(2)} €</span>
+                                  </div>
+                                  {totaux.tvaParTaux.map(({ taux, baseHT, montantTva }) => (
+                                    <div key={taux} className="flex justify-between text-sm text-gray-400">
+                                      <span>TVA {taux}% (base {baseHT.toFixed(2)} €)</span><span className="font-mono">{montantTva.toFixed(2)} €</span>
+                                    </div>
+                                  ))}
+                                  <div className={`flex justify-between text-base font-bold pt-2 border-t border-gray-600 ${isAvoir ? 'text-red-400' : 'text-blue-400'}`}>
+                                    <span>Total TTC</span><span className="font-mono">{totaux.totalTTC.toFixed(2)} €</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Conditions */}
+                              {!isAvoir && paramsSociete.iban && (
+                                <div className="px-8 py-3 border-t border-gray-700/50 bg-gray-700/20">
+                                  <p className="text-xs text-gray-400 font-semibold mb-1">Règlement par virement :</p>
+                                  <p className="text-xs font-mono text-gray-300">IBAN : {paramsSociete.iban}{paramsSociete.bic ? ` — BIC : ${paramsSociete.bic}` : ''}{paramsSociete.banque ? ` (${paramsSociete.banque})` : ''}</p>
+                                </div>
+                              )}
+                              <div className="px-8 py-3 border-t border-gray-700/50 bg-gray-700/10">
+                                <div className="text-xs text-gray-500 space-y-0.5">
+                                  <p>Conditions de paiement : {paramsSociete.conditionsPaiement || '30 jours net'}</p>
+                                  <p>Pénalités de retard (L.441-10 C.com.) : {paramsSociete.penalitesRetard || "Triple du taux d'intérêt légal"}</p>
+                                  <p>Indemnité forfaitaire de recouvrement : 40 € (D.441-5 C.com.)</p>
+                                  <p>Escompte : {paramsSociete.escompte || 'Aucun escompte pour règlement anticipé'}</p>
+                                  {factureActive.notes && <p className="mt-2 text-gray-400">Notes : {factureActive.notes}</p>}
+                                </div>
+                              </div>
+
+                              {/* Pied légal */}
+                              <div className="px-8 py-3 border-t border-gray-700/50 bg-gray-900/40">
+                                <p className="text-xs text-gray-600 leading-relaxed">
+                                  {paramsSociete.mentionsLegales || `${paramsSociete.raisonSociale || societes[societeActive]}${paramsSociete.formeJuridique ? ' — ' + paramsSociete.formeJuridique : ''}${paramsSociete.capital ? ' au capital de ' + paramsSociete.capital + ' €' : ''} — SIRET ${paramsSociete.siret || '...'} — RCS ${paramsSociete.rcs || '...'} — N°TVA ${paramsSociete.tvaNum || '...'}`}
+                                </p>
+                                <p className="text-xs text-indigo-600/60 mt-1">Document conforme Factur-X EN16931 COMFORT — XML CII disponible via le bouton «XML Factur-X» ci-dessus</p>
+                              </div>
+                            </div>
+
+                            {/* Info comptabilisation */}
+                            {factureActive.ecritureId && (
+                              <div className="bg-green-900/20 border border-green-700/40 rounded-xl p-4 flex items-center gap-3 text-sm">
+                                <span className="text-green-400 text-xl">✅</span>
+                                <div>
+                                  <p className="text-green-300 font-semibold">Écriture comptable générée</p>
+                                  <p className="text-green-400/70 text-xs mt-0.5">411{tier?.compteClient ? ` (${tier.compteClient})` : ''} / 70x / 445 — Visible dans le journal VE et le Grand Livre</p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
                   {/* VUE PLAN COMPTABLE */}
                   {activeView === 'plan' && (
                     <div className="space-y-6">
@@ -2030,6 +3356,178 @@
                   )}
                 </div>
               </div>
+
+              {/* ══ MODAL ÉDITION SOCIÉTÉ ══════════════════════════════════ */}
+              {editingSocieteId && (
+                <div className="fixed inset-0 bg-black/75 z-[200] flex items-start justify-center overflow-y-auto p-4 py-8">
+                  <div className="bg-gray-800 rounded-2xl border border-gray-600 w-full max-w-3xl shadow-2xl">
+
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+                      <div>
+                        <h2 className="text-lg font-bold text-blue-400">✏️ Modifier la société</h2>
+                        <p className="text-xs text-gray-400 mt-0.5">{societes[editingSocieteId]}{editingSocieteId === societeActive ? ' — société active' : ''}</p>
+                      </div>
+                      <button onClick={() => { setEditingSocieteId(null); setEditingSocieteForm(null); }}
+                        className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-700 hover:bg-gray-600 text-gray-300 text-lg font-bold transition">✕</button>
+                    </div>
+
+                    {loadingEditSociete ? (
+                      <div className="flex items-center justify-center py-16">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mr-3"></div>
+                        <span className="text-gray-400">Chargement…</span>
+                      </div>
+                    ) : editingSocieteForm && (
+                      <>
+                        <div className="p-6 space-y-7 overflow-y-auto max-h-[72vh]">
+
+                          {/* ── Nom & Identité juridique ── */}
+                          <section>
+                            <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-3 flex items-center gap-2"><span>🏢</span> Identité juridique</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {[
+                                ['nom',           'Nom affiché dans la liste *', 'text'],
+                                ['raisonSociale', 'Raison sociale (sur factures) *', 'text'],
+                                ['formeJuridique','Forme juridique', 'text'],
+                                ['capital',       'Capital social (€)', 'text'],
+                                ['siren',         'SIREN (9 chiffres)', 'text'],
+                                ['siret',         'SIRET (14 chiffres)', 'text'],
+                                ['tvaNum',        'N° TVA intracom.', 'text'],
+                                ['rcs',           'RCS (ville)', 'text'],
+                              ].map(([k, label, type]) => (
+                                <div key={k}>
+                                  <label className="block text-xs font-medium text-gray-400 mb-1">{label}</label>
+                                  <input type={type} value={editingSocieteForm[k] || ''}
+                                    onChange={e => setEditingSocieteForm(f => ({...f, [k]: e.target.value}))}
+                                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                </div>
+                              ))}
+                            </div>
+                          </section>
+
+                          {/* ── Coordonnées ── */}
+                          <section>
+                            <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-3 flex items-center gap-2"><span>📍</span> Coordonnées</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {[
+                                ['adresse',   'Adresse', 'text'],
+                                ['cp',        'Code postal', 'text'],
+                                ['ville',     'Ville', 'text'],
+                                ['pays',      'Pays', 'text'],
+                                ['email',     'Email', 'email'],
+                                ['telephone', 'Téléphone', 'text'],
+                              ].map(([k, label, type]) => (
+                                <div key={k}>
+                                  <label className="block text-xs font-medium text-gray-400 mb-1">{label}</label>
+                                  <input type={type} value={editingSocieteForm[k] || ''}
+                                    onChange={e => setEditingSocieteForm(f => ({...f, [k]: e.target.value}))}
+                                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                </div>
+                              ))}
+                            </div>
+                          </section>
+
+                          {/* ── Bancaire ── */}
+                          <section>
+                            <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-3 flex items-center gap-2"><span>🏦</span> Informations bancaires</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              {[
+                                ['iban',   'IBAN'],
+                                ['bic',    'BIC'],
+                                ['banque', 'Banque'],
+                              ].map(([k, label]) => (
+                                <div key={k}>
+                                  <label className="block text-xs font-medium text-gray-400 mb-1">{label}</label>
+                                  <input type="text" value={editingSocieteForm[k] || ''}
+                                    onChange={e => setEditingSocieteForm(f => ({...f, [k]: e.target.value}))}
+                                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                </div>
+                              ))}
+                            </div>
+                          </section>
+
+                          {/* ── Conditions de facturation ── */}
+                          <section>
+                            <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-3 flex items-center gap-2"><span>📄</span> Conditions de facturation</h3>
+                            <div className="space-y-3">
+                              {[
+                                ['conditionsPaiement', 'Conditions de paiement',  'Ex : 30 jours net, fin de mois'],
+                                ['penalitesRetard',    'Pénalités de retard',      "Ex : Triple du taux d'intérêt légal"],
+                                ['escompte',           'Escompte',                 'Ex : Aucun escompte pour règlement anticipé'],
+                              ].map(([k, label, ph]) => (
+                                <div key={k}>
+                                  <label className="block text-xs font-medium text-gray-400 mb-1">{label}</label>
+                                  <input type="text" value={editingSocieteForm[k] || ''} placeholder={ph}
+                                    onChange={e => setEditingSocieteForm(f => ({...f, [k]: e.target.value}))}
+                                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                </div>
+                              ))}
+                              <div>
+                                <label className="block text-xs font-medium text-gray-400 mb-1">Mentions légales additionnelles (pied de page)</label>
+                                <textarea rows="2" value={editingSocieteForm.mentionsLegales || ''}
+                                  onChange={e => setEditingSocieteForm(f => ({...f, mentionsLegales: e.target.value}))}
+                                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+                              </div>
+                            </div>
+                          </section>
+
+                          {/* ── Logo ── */}
+                          <section>
+                            <h3 className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-3 flex items-center gap-2"><span>🖼️</span> Logo</h3>
+                            <div className="flex items-center gap-5 flex-wrap">
+                              {editingSocieteForm.logo ? (
+                                <div className="relative flex-shrink-0">
+                                  <div className="bg-white rounded-lg p-2 border border-gray-600" style={{maxWidth:'200px'}}>
+                                    <img src={editingSocieteForm.logo} alt="Logo" className="max-h-24 max-w-full object-contain mx-auto block" />
+                                  </div>
+                                  <button onClick={() => setEditingSocieteForm(f => ({...f, logo: ''}))}
+                                    className="absolute -top-2 -right-2 w-6 h-6 bg-red-600 hover:bg-red-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow">✕</button>
+                                </div>
+                              ) : (
+                                <div className="flex-shrink-0 w-40 h-24 rounded-lg border-2 border-dashed border-gray-600 flex items-center justify-center text-gray-500 text-xs text-center px-3">
+                                  Aucun logo
+                                </div>
+                              )}
+                              <div className="space-y-2">
+                                <label className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-lg cursor-pointer text-sm text-gray-300 transition">
+                                  <Upload /> {editingSocieteForm.logo ? 'Remplacer le logo' : 'Télécharger un logo'}
+                                  <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden"
+                                    onChange={e => {
+                                      const file = e.target.files[0];
+                                      if (!file) return;
+                                      if (file.size > 800000) { alert('Le logo ne doit pas dépasser 800 Ko'); return; }
+                                      const reader = new FileReader();
+                                      reader.onload = ev => setEditingSocieteForm(f => ({...f, logo: ev.target.result}));
+                                      reader.readAsDataURL(file);
+                                      e.target.value = '';
+                                    }} />
+                                </label>
+                                <p className="text-xs text-gray-500">PNG, JPG, GIF ou WebP — max 800 Ko</p>
+                              </div>
+                            </div>
+                          </section>
+
+                        </div>
+
+                        {/* Footer boutons */}
+                        <div className="px-6 py-4 border-t border-gray-700 flex items-center justify-between gap-3 flex-wrap">
+                          <p className="text-xs text-gray-500">Les modifications seront appliquées immédiatement{editingSocieteId === societeActive ? ' à la société active.' : '.'}</p>
+                          <div className="flex gap-3">
+                            <button onClick={() => { setEditingSocieteId(null); setEditingSocieteForm(null); }}
+                              className="px-5 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm text-gray-300 transition">
+                              Annuler
+                            </button>
+                            <button onClick={sauvegarderEditionSociete}
+                              className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-semibold transition">
+                              <Save /> Enregistrer
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           );
         }
